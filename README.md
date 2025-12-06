@@ -427,4 +427,4 @@ For issues, questions, or contributions, please open an issue on GitHub.
 
 ---
 
-Made with ❤️ for better interview preparation
+Made with ❤️ for better interview preparation, by CPR.
