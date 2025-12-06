@@ -1,4 +1,4 @@
-# 🎯 AI Mock Interview Platform
+# AI Mock Interview Platform
 
 A full-stack AI-powered mock interview platform featuring voice integration, real-time feedback, and ML-based response analysis. The platform helps users practice interview skills with intelligent feedback and performance metrics.
 
