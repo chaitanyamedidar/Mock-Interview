@@ -1,3 +1,10 @@
+# Documentation that shouldn't be in git
 VAPI_FINAL_FIX.md
 VAPI_FIX_SUMMARY.md
 VAPI_INTEGRATION.md
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+interview_platform.db

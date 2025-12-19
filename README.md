@@ -109,16 +109,19 @@ Mock Interview/
 
 ## 🚀 Getting Started
 
+### Quick Setup
+
+📖 **For detailed setup instructions, see [SETUP.md](./SETUP.md)**
+
 ### Prerequisites
 
-- **Node.js** 18+ and npm/yarn/pnpm
-- **Python** 3.9+
-- **PostgreSQL** (optional, SQLite for development)
-- **VAPI Account** and API key
+- **Node.js** 18+ and npm/bun
+- **Python** 3.8+
+- **VAPI Account** and API key ([Get it here](https://vapi.ai))
 
-### Installation
+### Quick Start
 
-#### 1. Clone the Repository
+#### 1. Clone & Install
 
 ```bash
 git clone <repository-url>
@@ -129,69 +132,48 @@ cd "Mock Interview"
 
 ```bash
 cd ai-mock-interview-backend
-
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-# Windows:
-venv\Scripts\activate
-# macOS/Linux:
-source venv/bin/activate
-
-# Install dependencies
+python -m venv .venv
+.venv\Scripts\activate  # Windows | source .venv/bin/activate (macOS/Linux)
 pip install -r requirements.txt
-
-# Create .env file
 cp .env.example .env
-# Edit .env with your configurations
-```
-
-**Backend Environment Variables** (`.env`):
-```env
-DATABASE_URL=sqlite:///./interview.db
-VAPI_API_KEY=your_vapi_api_key
-VAPI_PHONE_NUMBER=your_vapi_phone_number
-SECRET_KEY=your_secret_key
-ENVIRONMENT=development
+# Edit .env with your VAPI credentials
+uvicorn app.main:app --reload
 ```
 
 #### 3. Frontend Setup
 
 ```bash
 cd ai-mock-interview-frontend
-
-# Install dependencies
-npm install
-# or
-yarn install
-# or
-pnpm install
-
-# Create .env.local file
+npm install  # or bun install
 cp .env.example .env.local
-# Edit .env.local with your configurations
+# Edit .env.local with your VAPI credentials
+npm run dev  # or bun dev
 ```
 
-**Frontend Environment Variables** (`.env.local`):
+#### 4. Access Application
+
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
+
+### Environment Variables
+
+**Backend** (`.env`):
 ```env
+VAPI_API_KEY=your_private_key
+VAPI_WEBHOOK_SECRET=your_webhook_secret
+SECRET_KEY=your_jwt_secret
+DATABASE_URL=sqlite:///./interview_platform.db
+```
+
+**Frontend** (`.env.local`):
+```env
+NEXT_PUBLIC_VAPI_PUBLIC_KEY=pk_your_public_key
+NEXT_PUBLIC_VAPI_ASSISTANT_ID=asst_your_assistant_id
 NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_VAPI_PUBLIC_KEY=your_vapi_public_key
 ```
 
-#### 4. Initialize Database and ML Models
-
-```bash
-cd ai-mock-interview-backend
-
-# Activate virtual environment
-venv\Scripts\activate  # Windows
-# source venv/bin/activate  # macOS/Linux
-
-# Generate training data and train ML model
-python scripts/generate_training_data.py
-python scripts/train_model.py
-```
+📖 **For detailed configuration guide, see [SETUP.md](./SETUP.md)**
 
 ### Running the Application
 

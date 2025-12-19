@@ -3,8 +3,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-#env
-.env
 # C extensions
 *.so
 
@@ -91,11 +89,19 @@ celerybeat-schedule
 # Environments
 .env
 .venv
+.venv/
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+pyvenv.cfg
+Scripts/
+Scripts copy/
+Include/
+Lib/
+lib/
+lib64/
 
 # Spyder project settings
 .spyderproject
@@ -153,5 +159,7 @@ Thumbs.db
 *.mp3
 *.mp4
 *.avi
-ai-mock-interview-backend\FILE_INTEGRITY_REPORT.md
-ai-mock-interview-backend\backend.md
+
+# Documentation files
+FILE_INTEGRITY_REPORT.md
+backend.md
