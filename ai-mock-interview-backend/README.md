@@ -28,13 +28,13 @@ git clone <repository-url>
 cd ai-mock-interview-backend
 
 # Create virtual environment
-python -m venv venv
+python -m venv .venv
 
 # Activate virtual environment
 # Windows:
-venv\Scripts\activate
+.venv\Scripts\activate
 # macOS/Linux:
-source venv/bin/activate
+source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -60,25 +60,26 @@ BACKEND_URL=http://localhost:8000
 ### 3. Database Setup
 
 ```bash
-# Initialize database and seed questions
-python backend/database.py
+# The database will be created automatically when you run the application
+# SQLite database file: interview_platform.db
 ```
 
 ### 4. Train ML Model (Optional)
 
 ```bash
-# Train the ML model for response analysis
-python backend/model_training.py
+# Generate training data and train the ML model
+python scripts/generate_training_data.py
+python scripts/train_model.py
 ```
 
 ### 5. Run the Application
 
 ```bash
 # Development server
-uvicorn backend.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000
 
 # Production server
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 The API will be available at:
@@ -350,7 +351,8 @@ curl http://localhost:8000/health
 **ML Model Not Loading**
 ```bash
 # Train the model first
-python backend/model_training.py
+python scripts/generate_training_data.py
+python scripts/train_model.py
 
 # Check model file exists
 ls models/interview_classifier.pkl

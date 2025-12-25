@@ -45,8 +45,8 @@ Create or update `.env.local` in your frontend folder:
 
 ```bash
 # VAPI Configuration
-NEXT_PUBLIC_VAPI_PUBLIC_KEY=aa3501af-fd20-4d3a-8631-8071ead4135a
-NEXT_PUBLIC_VAPI_ASSISTANT_ID=your_assistant_id_here
+NEXT_PUBLIC_VAPI_PUBLIC_KEY=pk_your_public_key_from_vapi_dashboard
+NEXT_PUBLIC_VAPI_ASSISTANT_ID=asst_your_assistant_id_from_vapi_dashboard
 
 # Backend API
 NEXT_PUBLIC_API_URL=http://localhost:8000
@@ -55,13 +55,13 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ### Important Notes:
 
 1. **API Key Format:**
-   - Public key does NOT start with 'p' in your case
-   - The key `aa3501af-fd20-4d3a-8631-8071ead4135a` is valid
-   - Don't confuse it with the private key `b8939836-9f76-4e23-891a-f2cdc7f24866`
+   - Public key should start with `pk_` prefix
+   - Get this from your VAPI dashboard under API Keys
+   - Never use your private key in the frontend!
 
 2. **Assistant ID:**
    - You need to create an assistant in your VAPI dashboard
-   - Replace `your_assistant_id_here` with your actual assistant ID
+   - The ID should start with `asst_` prefix
    - Or remove it to use inline assistant configuration
 
 ## How to Get VAPI Keys

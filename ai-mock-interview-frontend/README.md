@@ -1,15 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Mock Interview Frontend
 
-## Getting Started
+A modern Next.js frontend for the AI-powered mock interview platform with VAPI voice integration.
 
-First, run the development server:
+## 🚀 Quick Setup
+
+For detailed setup instructions, see [SETUP.md](../SETUP.md) in the root directory.
+
+### 1. Install Dependencies
+
+```bash
+npm install
+# or
+bun install
+```
+
+### 2. Configure Environment
+
+```bash
+# Copy environment template
+cp .env.example .env.local
+
+# Edit .env.local with your VAPI credentials
+```
+
+Required environment variables:
+```env
+NEXT_PUBLIC_VAPI_PUBLIC_KEY=pk_your_public_key
+NEXT_PUBLIC_VAPI_ASSISTANT_ID=asst_your_assistant_id
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+### 3. Run Development Server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
 # or
 bun dev
 ```

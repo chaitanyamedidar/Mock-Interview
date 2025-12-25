@@ -181,7 +181,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 ```bash
 cd ai-mock-interview-backend
-venv\Scripts\activate  # Windows
+.venv\Scripts\activate  # Windows | source .venv/bin/activate (macOS/Linux)
 
 # Run with uvicorn
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -213,16 +213,16 @@ The frontend will be available at: http://localhost:3000
 
 1. Create a VAPI account at [vapi.ai](https://vapi.ai)
 2. Create a new assistant for the mock interview
-3. Copy your API keys and phone number
-4. Add them to your `.env` files
+3. Copy your API keys (Public and Private)
+4. Add them to your `.env` and `.env.local` files
 
-See [VAPI_SETUP_GUIDE.md](./ai-mock-interview-frontend/VAPI_SETUP_GUIDE.md) for detailed setup instructions.
+See [SETUP.md](./SETUP.md) for detailed setup instructions.
 
 ### Database Configuration
 
 **Development**: SQLite (default)
 - No additional setup required
-- Database file: `interview.db`
+- Database file: `interview_platform.db`
 
 **Production**: PostgreSQL
 ```env
@@ -375,13 +375,19 @@ vercel deploy
 ### Backend (.env)
 - `DATABASE_URL` - Database connection string
 - `VAPI_API_KEY` - VAPI private API key
-- `VAPI_PHONE_NUMBER` - VAPI phone number
-- `SECRET_KEY` - Application secret key
-- `ENVIRONMENT` - development/production
+- `VAPI_WEBHOOK_SECRET` - VAPI webhook secret
+- `SECRET_KEY` - JWT secret key for authentication
+- `BACKEND_URL` - Backend URL for webhooks
+- `OPENAI_API_KEY` - OpenAI API key (optional)
+- `DEBUG` - Debug mode (True/False)
+- `ALLOWED_ORIGINS` - CORS allowed origins
 
 ### Frontend (.env.local)
 - `NEXT_PUBLIC_API_URL` - Backend API URL
-- `NEXT_PUBLIC_VAPI_PUBLIC_KEY` - VAPI public key
+- `NEXT_PUBLIC_VAPI_PUBLIC_KEY` - VAPI public key (starts with pk_)
+- `NEXT_PUBLIC_VAPI_ASSISTANT_ID` - VAPI assistant ID
+
+**📖 See [SETUP.md](./SETUP.md) for detailed configuration guide**
 
 ## 🤝 Contributing
 
