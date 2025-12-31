@@ -50,6 +50,7 @@ export default function Home() {
           <nav className="hidden md:flex items-center gap-6">
             <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Features</a>
             <a href="#templates" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Templates</a>
+            <Link href="/resume" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Resume Analyzer</Link>
             <Button variant="ghost" size="sm">Sign In</Button>
             <Button size="sm" className="bg-primary hover:bg-primary/90">Get Started</Button>
           </nav>
@@ -76,9 +77,11 @@ export default function Home() {
                 <Sparkles className="ml-2 h-4 w-4" />
               </Button>
             </Link>
-            <Button size="lg" variant="outline" className="text-base px-8 h-12">
-              View Demo
-            </Button>
+            <Link href="/resume">
+              <Button size="lg" variant="outline" className="text-base px-8 h-12">
+                Analyze Resume
+              </Button>
+            </Link>
           </div>
           <div className="flex items-center justify-center gap-8 pt-8 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">

@@ -26,10 +26,16 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useVAPI } from "@/hooks/useVAPI";
 import FeedbackDisplay from "@/components/FeedbackDisplay";
 
+interface TranscriptMessage {
+  speaker: 'user' | 'interviewer';
+  text: string;
+  timestamp: Date;
+}
+
 export default function InterviewPage() {
   const router = useRouter();
   const interview = useInterview();
-  const [transcript, setTranscript] = useState("");
+  const [messages, setMessages] = useState<TranscriptMessage[]>([]);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [currentResponse, setCurrentResponse] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -37,17 +43,27 @@ export default function InterviewPage() {
 
   // VAPI Integration
   const vapi = useVAPI({
-    onTranscript: (newTranscript) => {
-      setTranscript(prev => prev + ' ' + newTranscript);
-      setCurrentResponse(prev => prev + ' ' + newTranscript);
+    onMessage: (message) => {
+      if (message.type === 'transcript' && message.transcript) {
+        const isUser = message.role === 'user';
+        setMessages(prev => [
+          ...prev,
+          {
+            speaker: isUser ? 'user' : 'interviewer',
+            text: message.transcript,
+            timestamp: new Date()
+          }
+        ]);
+        if (isUser) {
+          setCurrentResponse(prev => prev + ' ' + message.transcript);
+        }
+      }
     },
     onCallStart: () => {
-      console.log('VAPI call started');
-      setTranscript('');
+      setMessages([]);
       setCurrentResponse('');
     },
     onCallEnd: () => {
-      console.log('VAPI call ended');
       if (currentResponse.trim()) {
         handleAnalyzeResponse();
       }
@@ -139,14 +155,14 @@ export default function InterviewPage() {
       try {
         await interview.analyzeResponse(currentResponse);
         interview.nextQuestion();
-        setTranscript("");
+        setMessages([]);
         setCurrentResponse("");
       } catch (error) {
         console.error("Failed to analyze response:", error);
       }
     } else {
       interview.nextQuestion();
-      setTranscript("");
+      setMessages([]);
       setCurrentResponse("");
     }
   };
@@ -405,54 +421,72 @@ export default function InterviewPage() {
 
           {/* Right Column - Transcript & Feedback */}
           <div className="space-y-6">
-            {/* Debug Info */}
-            {vapi.error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  <strong>VAPI Error:</strong> {vapi.error}
-                  <br />
-                  <small>
-                    Check console for details or ensure NEXT_PUBLIC_VAPI_PUBLIC_KEY is set correctly.
-                    <br />
-                    Current API Key: {process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY?.substring(0, 10)}...
-                  </small>
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {/* VAPI Debug Panel */}
-            <Card className="border-dashed">
-              <CardContent className="p-4">
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">VAPI Status Debug</div>
-                  <div className="text-xs space-y-1">
-                    <div>Call Active: {vapi.isCallActive ? '✅' : '❌'}</div>
-                    <div>Speaking: {vapi.isSpeaking ? '🟢 Yes' : '🔴 No'}</div>
-                    <div>Has Error: {vapi.error ? '❌ Yes' : '✅ No'}</div>
-                    <div>API Key Present: {process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY && process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY !== 'pk_your_public_key_from_vapi_dashboard' ? '✅' : '❌'}</div>
-                    <div>Transcript Length: {vapi.transcript.length} chars</div>
-                  </div>
-                  <Button 
-                    onClick={() => {
-                      console.log('=== VAPI Debug Info ===');
-                      console.log('VAPI Object:', vapi);
-                      console.log('Window VAPI:', (window as any).vapi);
-                      console.log('API Key:', process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY);
-                      console.log('Assistant ID:', process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID);
-                    }}
-                    variant="outline" 
-                    size="sm"
-                  >
-                    Debug VAPI
-                  </Button>
+            {/* Realtime Transcript */}
+            <Card className="bg-card/50 border-border/40">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <MessageSquare className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold">Conversation Transcript</h3>
+                </div>
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {messages.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground text-sm">
+                      Start speaking to see the transcript...
+                    </div>
+                  ) : (
+                    messages.map((msg, idx) => (
+                      <div 
+                        key={idx}
+                        className={`flex gap-3 p-3 rounded-lg ${
+                          msg.speaker === 'user' 
+                            ? 'bg-primary/10 ml-4' 
+                            : 'bg-muted/50 mr-4'
+                        }`}
+                      >
+                        <div className="flex-shrink-0">
+                          <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
+                            msg.speaker === 'user'
+                              ? 'bg-primary/20 text-primary'
+                              : 'bg-purple-500/20 text-purple-500'
+                          }`}>
+                            {msg.speaker === 'user' ? (
+                              <span className="text-xs font-bold">YOU</span>
+                            ) : (
+                              <span className="text-xs font-bold">AI</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-2 mb-1">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {msg.speaker === 'user' ? 'You' : 'Interviewer'}
+                            </span>
+                            <span className="text-xs text-muted-foreground/60">
+                              {msg.timestamp.toLocaleTimeString()}
+                            </span>
+                          </div>
+                          <p className="text-sm leading-relaxed break-words">
+                            {msg.text}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>
             
+            {/* VAPI Error (if any) */}
+            {vapi.error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{vapi.error}</AlertDescription>
+              </Alert>
+            )}
+            
             <FeedbackDisplay 
               feedback={currentFeedback}
-              transcript={transcript}
+              transcript={currentResponse}
               isAnalyzing={isAnalyzing}
             />
 

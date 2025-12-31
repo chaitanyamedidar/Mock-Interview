@@ -86,16 +86,13 @@ export function useVAPI(config: Partial<VAPIConfig> = {}): VAPICall {
       vapiRef.current.on('message', (message: any) => {
         console.log('📨 Message:', message);
         
-        // Handle transcripts
-        if (message.type === 'transcript') {
-          const text = message.transcript || '';
-          if (text) {
-            setTranscript(prev => prev + ' ' + text);
-            config.onTranscript?.(text);
-          }
-        }
-        
+        // Pass all messages to handler (including role information)
         config.onMessage?.(message);
+        
+        // Also handle legacy transcript callback
+        if (message.type === 'transcript' && message.transcript) {
+          config.onTranscript?.(message.transcript);
+        }
       });
 
       vapiRef.current.on('error', (err: any) => {
