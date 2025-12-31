@@ -1,6 +1,6 @@
 # AI Mock Interview Platform
 
-A full-stack AI-powered mock interview platform featuring voice integration, real-time feedback, and ML-based response analysis. The platform helps users practice interview skills with intelligent feedback and performance metrics.
+A full-stack AI-powered mock interview platform featuring voice integration, real-time feedback, and LLM-based analysis. The platform helps users practice interview skills with intelligent feedback, performance metrics, and professional ATS resume analysis.
 
 ## 📑 Table of Contents
 
@@ -19,9 +19,10 @@ A full-stack AI-powered mock interview platform featuring voice integration, rea
 
 This platform provides an immersive mock interview experience with:
 - **Voice-enabled interviews** using VAPI integration
-- **AI-powered feedback** using machine learning models
+- **LLM-powered feedback** using Google Gemini via OpenRouter
+- **ATS Resume Analyzer** with 6-parameter scoring system and file upload support (PDF/DOCX/TXT)
 - **Multiple interview types**: Technical (Software, Data Science), Behavioral, and Company-specific
-- **Real-time analysis** of responses with scoring and recommendations
+- **Real-time transcript** with clear speaker differentiation (User vs Interviewer)
 - **Comprehensive reporting** with strengths, improvements, and detailed metrics
 
 ## ✨ Features
@@ -29,6 +30,8 @@ This platform provides an immersive mock interview experience with:
 ### Frontend (Next.js)
 - 🎨 Modern, responsive UI with Tailwind CSS
 - 🎙️ Voice interview interface with VAPI integration
+- � **Resume Analyzer** with file upload (PDF, DOCX, TXT)
+- 💬 Structured real-time transcript with speaker differentiation
 - 📊 Real-time performance dashboard
 - 📈 Interactive charts and visualizations
 - 🎯 Multiple interview types and difficulty levels
@@ -37,10 +40,12 @@ This platform provides an immersive mock interview experience with:
 
 ### Backend (FastAPI)
 - 🚀 High-performance RESTful API
-- 🤖 ML-powered response analysis using scikit-learn
+- 🤖 **LLM-powered analysis** using Google Gemini 2.0 Flash via OpenRouter
+- 📄 **ATS Resume Analysis** with authoritative 6-parameter scoring system
+- 📁 **File parsing** for PDF (PyPDF2), DOCX (python-docx), and TXT files
 - 📝 Comprehensive question database (50+ questions)
 - 🔊 VAPI webhook integration for voice processing
-- 💾 Database support (PostgreSQL/SQLite)
+- 💾 SQLite database (lightweight, no PostgreSQL required)
 - 📊 Advanced analytics and metrics
 - 🔐 Secure API endpoints
 - 📖 Automatic API documentation (Swagger/ReDoc)
@@ -56,13 +61,13 @@ This platform provides an immersive mock interview experience with:
 - **Voice Integration**: VAPI SDK
 - **Animations**: Framer Motion, React Three Fiber
 - **Charts**: Recharts
-- **Icons**: Tabler Icons, Heroicons
-
-### Backend
-- **Framework**: FastAPI
-- **Language**: Python 3.9+
-- **Database**: PostgreSQL (production), SQLite (development)
-- **ORM**: SQLAlchemy
+- **Icons**: Tabler Icons13+
+- **Database**: SQLite (SQLAlchemy ORM)
+- **LLM Provider**: OpenRouter (Google Gemini 2.0 Flash Experimental)
+- **LLM Client**: OpenAI SDK
+- **File Processing**: PyPDF2, python-docx
+- **API**: Requests
+- **Configuration**: python-dotenv, pydantic
 - **ML Framework**: scikit-learn
 - **NLP**: NLTK
 - **Data Processing**: Pandas, NumPy
@@ -90,18 +95,13 @@ Mock Interview/
 │   │   ├── models.py               # SQLAlchemy database models
 │   │   ├── database.py             # Database configuration
 │   │   ├── vapi_service.py         # VAPI integration service
-│   │   ├── ml_service.py           # ML analysis service
-│   │   └── ml/                     # Machine learning modules
-│   │       └── feature_extraction.py
+│   │   ├── ml_service.py           # LLM interview analysis service
+│   │   ├── resume_service.py       # LLM resume analysis service
+│   │   └── file_parser.py          # PDF/DOCX/TXT file parsing utility
 │   ├── data/
-│   │   ├── interview-questions.json # Question database
-│   │   └── training_data.csv       # ML training data
-│   ├── scripts/
-│   │   ├── generate_training_data.py
-│   │   └── train_model.py          # ML model training script
+│   │   └── interview-questions.json # Question database
 │   ├── tests/                      # Test files
-│   ├── logs/                       # Application logs
-│   ├── models/                     # Trained ML models
+│   ├── .env                        # Environment configuration
 │   └── requirements.txt            # Python dependencies
 │
 └── README.md                       # This file
@@ -121,8 +121,9 @@ Mock Interview/
 
 ### Quick Start
 
-#### 1. Clone & Install
-
+#### 1. Clone &13+
+- **OpenRouter Account** and API key ([Get it here](https://openrouter.ai))
+- **VAPI Account** and API key ([Get it here](https://vapi.ai)) - Optional for voice features
 ```bash
 git clone <repository-url>
 cd "Mock Interview"
@@ -140,8 +141,8 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
-#### 3. Frontend Setup
-
+#### 3. Frontend SetupOpenRouter API key and VAPI credentials
+python -m 
 ```bash
 cd ai-mock-interview-frontend
 npm install  # or bun install
@@ -159,10 +160,21 @@ npm run dev  # or bun dev
 ### Environment Variables
 
 **Backend** (`.env`):
-```env
+# Database
+DATABASE_URL=sqlite:///./interview_platform.db
+
+# LLM Configuration (OpenRouter)
+LLM_API_KEY=sk-or-v1-your_openrouter_api_key
+LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_MODEL=google/gemini-2.0-flash-exp:free
+
+# VAPI Configuration (Optional - for voice features)
 VAPI_API_KEY=your_private_key
 VAPI_WEBHOOK_SECRET=your_webhook_secret
-SECRET_KEY=your_jwt_secret
+BACKEND_URL=http://localhost:8000
+
+# Application
+DEBUG=True
 DATABASE_URL=sqlite:///./interview_platform.db
 ```
 
@@ -198,27 +210,31 @@ The backend API will be available at:
 cd ai-mock-interview-frontend
 
 # Run development server
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-```
+npm OpenRouter Setup
 
-The frontend will be available at: http://localhost:3000
+1. Create an OpenRouter account at [openrouter.ai](https://openrouter.ai)
+2. Get your API key from [openrouter.ai/keys](https://openrouter.ai/keys)
+3. Add it to your backend `.env` file as `LLM_API_KEY`
+4. Default model is `google/gemini-2.0-flash-exp:free` (free tier)
+5. Alternative free models:
+   - `google/gemini-flash-1.5:free`
+   - `qwen/qwen-2.5-7b-instruct:free`
 
-## ⚙️ Configuration
+### VAPI Setup (Optional)
+# SQLite** (default and recommended):
+- No additional setup required
+- Database file: `interview_platform.db`
+- Automatically created on first run
+- Perfect for development and small-scale production
 
-### VAPI Setup
+### LLM Configuration
 
-1. Create a VAPI account at [vapi.ai](https://vapi.ai)
-2. Create a new assistant for the mock interview
-3. Copy your API keys (Public and Private)
-4. Add them to your `.env` and `.env.local` files
+The platform uses **OpenRouter** to access various LLM models:
 
-See [SETUP.md](./SETUP.md) for detailed setup instructions.
-
-### Database Configuration
+- **Default Model**: `google/gemini-2.0-flash-exp:free` (free tier)
+- **Customizable**: Change `LLM_MODEL` in `.env` to use different models
+- **Supported Free Models**: Gemini Flash 1.5, Qwen 2.5, and more
+- **Headers**: Automatically includes HTTP-Referer and X-Title for better rate limiting
 
 **Development**: SQLite (default)
 - No additional setup required
@@ -245,15 +261,24 @@ Models will be saved to the `models/` directory.
 
 ### Main Endpoints
 
-#### Start Interview
-```http
-POST /api/v1/interview/start
+#### Startinterview/analyze
 Content-Type: application/json
 
 {
-  "interview_type": "technical_software",
-  "difficulty": "intermediate",
-  "duration": 30,
+  "session_id": "uuid",
+  "response_text": "User's answer",
+  "interview_type": "behavioral"
+}
+```
+
+#### Analyze Resume
+```http
+POST /api/resume/analyze
+Content-Type: multipart/form-data
+
+file: <resume.pdf/resume.docx/resume.txt>
+job_description: "Optional job description for matching"
+target_role: "Optional target role (e.g., Software Engineer)" "duration": 30,
   "company": "Optional Company Name"
 }
 ```
@@ -360,14 +385,14 @@ docker run -p 8000:8000 --env-file .env ai-interview-backend
 #### Vercel (Recommended)
 ```bash
 cd ai-mock-interview-frontend
-vercel deploy
-```
-
-#### Other Platforms
-- Netlify
-- AWS Amplify
-- DigitalOcean App Platform
-
+vercel deploy (SQLite default)
+- `LLM_API_KEY` - OpenRouter API key (**required**)
+- `LLM_BASE_URL` - OpenRouter base URL (https://openrouter.ai/api/v1)
+- `LLM_MODEL` - LLM model to use (default: google/gemini-2.0-flash-exp:free)
+- `VAPI_API_KEY` - VAPI private API key (optional)
+- `VAPI_WEBHOOK_SECRET` - VAPI webhook secret (optional)
+- `BACKEND_URL` - Backend URL for webhooks
+- `DEBUG` - Debug mode (True/False)
 **Important**: Configure environment variables in your deployment platform.
 
 ## 📝 Environment Variables Summary
@@ -400,11 +425,12 @@ vercel deploy
 ## 📄 License
 
 This project is licensed under the MIT License.
-
-## 🙏 Acknowledgments
-
+OpenRouter** for LLM API access
+- **Google** for Gemini models
 - **VAPI** for voice integration
 - **FastAPI** for the excellent Python web framework
+- **Next.js** for the React framework
+- **shadcn/ui** for beautiful UI componentn web framework
 - **Next.js** for the React framework
 - **shadcn/ui** for beautiful UI components
 - **scikit-learn** for ML capabilities

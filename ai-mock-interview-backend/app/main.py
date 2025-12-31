@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Request
+from fastapi import FastAPI, HTTPException, Depends, status, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -13,6 +13,9 @@ from .database import get_db, SessionLocal, init_database
 from .models import InterviewSession, SessionResponse, FeedbackDetail, InterviewQuestion
 from .ml_service import InterviewAnalyzer
 from .vapi_service import VAPIManager
+from .resume_service import ATSResumeAnalyzer
+from .file_parser import FileParser
+from .file_parser import FileParser
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +42,7 @@ app.add_middleware(
 # Initialize services
 analyzer = InterviewAnalyzer()
 vapi_manager = VAPIManager()
+resume_analyzer = ATSResumeAnalyzer()
 
 # Pydantic models for request/response validation
 class InterviewStartRequest(BaseModel):
@@ -582,6 +586,76 @@ def calculate_overall_feedback(responses: List[SessionResponse], db: Session) ->
         "detailed_metrics": detailed_metrics
     }
 
+# Resume Analysis Endpoints
+class ResumeAnalysisResponse(BaseModel):
+    overall_score: int
+    ats_score: int
+    rating: str
+    category_scores: Dict[str, int]
+    key_strengths: List[str]
+    critical_issues: List[Dict[str, str]]
+    missing_sections: List[str]
+    keyword_analysis: Dict[str, Any]
+    formatting_issues: List[str]
+    recommendations: List[str]
+    summary: str
+
+@app.post("/api/resume/analyze", response_model=ResumeAnalysisResponse)
+async def analyze_resume(
+    file: UploadFile = File(..., description="Resume file (PDF, DOCX, or TXT)"),
+    job_description: Optional[str] = Form(None),
+    target_role: Optional[str] = Form(None)
+):
+    """
+    Analyze a resume file for ATS compatibility and provide actionable feedback.
+    Accepts PDF, DOCX, or TXT file formats.
+    """
+    try:
+        # Validate file extension
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No filename provided")
+        
+        allowed_extensions = ['.pdf', '.docx', '.txt']
+        file_ext = '.' + file.filename.lower().split('.')[-1]
+        
+        if file_ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Unsupported file format. Please upload PDF, DOCX, or TXT files."
+            )
+        
+        # Read file content
+        file_content = await file.read()
+        
+        # Extract text from file
+        try:
+            resume_text = FileParser.extract_text(file_content, file.filename)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        if not resume_text or len(resume_text.strip()) < 50:
+            raise HTTPException(
+                status_code=400,
+                detail="Unable to extract sufficient text from the file. Please ensure the file is not empty or corrupted."
+            )
+        
+        # Analyze the resume using the LLM service
+        analysis = resume_analyzer.analyze_resume(
+            resume_text=resume_text,
+            job_description=job_description or '',
+            target_role=target_role or ''
+        )
+        
+        return ResumeAnalysisResponse(**analysis)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error analyzing resume: {e}")
+        raise HTTPException(status_code=500, detail=f"Resume analysis failed: {str(e)}")
+
+
+# R
 # Run the application
 if __name__ == "__main__":
     import uvicorn
