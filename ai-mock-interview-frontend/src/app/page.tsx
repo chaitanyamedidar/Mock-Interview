@@ -9,14 +9,14 @@ import { Sparkles, Target, Zap, BarChart3, Brain, Mic, Clock, Award } from "luci
 import Link from "next/link";
 
 const companies = [
-  { name: "Google", role: "Software Engineer", level: "L4", difficulty: "Hard", questions: 12, duration: "45 min", logo: "https://images.unsplash.com/photo-1573804633927-bfcbcd909acd?w=100&h=100&fit=crop" },
-  { name: "Meta", role: "Product Manager", level: "IC4", difficulty: "Hard", questions: 10, duration: "40 min", logo: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=100&h=100&fit=crop" },
-  { name: "Amazon", role: "Data Scientist", level: "L5", difficulty: "Medium", questions: 8, duration: "35 min", logo: "https://images.unsplash.com/photo-1523474253046-8cd2748b5fd2?w=100&h=100&fit=crop" },
-  { name: "Microsoft", role: "Software Engineer", level: "62", difficulty: "Medium", questions: 10, duration: "40 min", logo: "https://images.unsplash.com/photo-1633419461186-7d40a38105ec?w=100&h=100&fit=crop" },
-  { name: "Apple", role: "Design Lead", level: "ICT4", difficulty: "Hard", questions: 9, duration: "38 min", logo: "https://images.unsplash.com/photo-1611532736597-de2d4265fba3?w=100&h=100&fit=crop" },
-  { name: "Netflix", role: "Backend Engineer", level: "Senior", difficulty: "Hard", questions: 11, duration: "42 min", logo: "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?w=100&h=100&fit=crop" },
-  { name: "Tesla", role: "Systems Engineer", level: "L3", difficulty: "Medium", questions: 10, duration: "40 min", logo: "https://images.unsplash.com/photo-1560958089-b8a1929cea89?w=100&h=100&fit=crop" },
-  { name: "Spotify", role: "Product Designer", level: "Senior", difficulty: "Medium", questions: 8, duration: "35 min", logo: "https://images.unsplash.com/photo-1614680376593-902f74cf0d41?w=100&h=100&fit=crop" },
+  { name: "Google", role: "Software Engineer", level: "L4", difficulty: "Hard", questions: 12, duration: "45 min", logo: "https://images.unsplash.com/photo-1706426629246-2a3c3e3e3ff2?q=80&w=880&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" },
+  { name: "Meta", role: "Product Manager", level: "IC4", difficulty: "Hard", questions: 10, duration: "40 min", logo: "https://images.unsplash.com/photo-1706879349328-4a05bb3e16ea?q=80&w=881&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" },
+  { name: "Amazon", role: "Data Scientist", level: "L5", difficulty: "Medium", questions: 8, duration: "35 min", logo: "https://images.unsplash.com/photo-1704204656144-3dd12c110dd8?q=80&w=1409&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" },
+  { name: "Microsoft", role: "Software Engineer", level: "62", difficulty: "Medium", questions: 10, duration: "40 min", logo: "https://images.unsplash.com/photo-1704089272382-201cf5c1bbbb?q=80&w=1408&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" },
+  { name: "Apple", role: "Design Lead", level: "ICT4", difficulty: "Hard", questions: 9, duration: "38 min", logo: "https://images.unsplash.com/photo-1621768216002-5ac171876625?q=80&w=1474&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" },
+  { name: "Netflix", role: "Backend Engineer", level: "Senior", difficulty: "Hard", questions: 11, duration: "42 min", logo: "https://images.unsplash.com/photo-1662338034986-39d0ca684d6c?q=80&w=1528&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" },
+  { name: "Tesla", role: "Systems Engineer", level: "L3", difficulty: "Medium", questions: 10, duration: "40 min", logo: "https://images.unsplash.com/photo-1662947475515-e95c81c04753?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8M3x8dGVzbGElMjBvZmZpY2lhbCUyMGxvZ298ZW58MHx8MHx8fDI%3D" },
+  { name: "Spotify", role: "Product Designer", level: "Senior", difficulty: "Medium", questions: 8, duration: "35 min", logo: "https://images.unsplash.com/photo-1706879350865-e1cdb3792b22?q=80&w=880&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" },
 ];
 
 const features = [
@@ -70,14 +70,21 @@ export default function Home() {
           <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
             Practice with AI-powered mock interviews tailored to top companies. Get real-time feedback and ace your dream job.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-            <Link href="/interview">
-              <Button size="lg" className="text-base px-8 h-12 bg-primary hover:bg-primary/90">
-                Start Free Interview
-                <Sparkles className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
-            <Link href="/resume">
+          <div className="flex flex-col gap-4 justify-center pt-4">
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link href="/interview">
+                <Button size="lg" className="text-base px-8 h-12 bg-primary hover:bg-primary/90">
+                  Start Round 1 - Behavioral
+                  <Sparkles className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+              <Link href="/technical-interview">
+                <Button size="lg" variant="secondary" className="text-base px-8 h-12">
+                  Start Round 2 - Technical
+                </Button>
+              </Link>
+            </div>
+            <Link href="/resume" className="mx-auto">
               <Button size="lg" variant="outline" className="text-base px-8 h-12">
                 Analyze Resume
               </Button>

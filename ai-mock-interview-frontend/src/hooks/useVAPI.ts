@@ -18,8 +18,10 @@ export interface VAPIConfig {
 export interface VAPICall {
   start: () => Promise<void>;
   stop: () => Promise<void>;
+  send: (message: any) => void;
   isCallActive: boolean;
   isSpeaking: boolean;
+  isLoading: boolean;
   transcript: string;
   error: string | null;
 }
@@ -27,6 +29,7 @@ export interface VAPICall {
 export function useVAPI(config: Partial<VAPIConfig> = {}): VAPICall {
   const [isCallActive, setIsCallActive] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const vapiRef = useRef<Vapi | null>(null);
@@ -130,6 +133,7 @@ export function useVAPI(config: Partial<VAPIConfig> = {}): VAPICall {
       return;
     }
 
+    setIsLoading(true);
     try {
       console.log('🚀 Starting VAPI call...');
       console.log('📋 Assistant ID:', assistantId || 'Using inline config');
@@ -168,6 +172,8 @@ export function useVAPI(config: Partial<VAPIConfig> = {}): VAPICall {
     } catch (err: any) {
       console.error('❌ Failed to start VAPI call:', err);
       setError(err.message || 'Failed to start call');
+    } finally {
+      setIsLoading(false);
     }
   }, [assistantId]);
 
@@ -182,11 +188,27 @@ export function useVAPI(config: Partial<VAPIConfig> = {}): VAPICall {
     }
   }, []);
 
+  const send = useCallback((message: any) => {
+    if (!vapiRef.current) {
+      console.error('❌ Cannot send message: VAPI not initialized');
+      return;
+    }
+
+    try {
+      vapiRef.current.send(message);
+      console.log('📤 Message sent to VAPI:', message);
+    } catch (err: any) {
+      console.error('❌ Failed to send message to VAPI:', err);
+    }
+  }, []);
+
   return {
     start,
     stop,
+    send,
     isCallActive,
     isSpeaking,
+    isLoading,
     transcript,
     error
   };

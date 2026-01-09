@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,20 +40,41 @@ export default function InterviewPage() {
   const [currentResponse, setCurrentResponse] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentFeedback, setCurrentFeedback] = useState<any>(null);
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to latest message
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   // VAPI Integration
   const vapi = useVAPI({
     onMessage: (message) => {
       if (message.type === 'transcript' && message.transcript) {
         const isUser = message.role === 'user';
-        setMessages(prev => [
-          ...prev,
-          {
-            speaker: isUser ? 'user' : 'interviewer',
-            text: message.transcript,
-            timestamp: new Date()
+        
+        setMessages(prev => {
+          // If last message is from the same speaker, append to it instead of creating new message
+          if (prev.length > 0 && prev[prev.length - 1].speaker === (isUser ? 'user' : 'interviewer')) {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              ...updated[updated.length - 1],
+              text: updated[updated.length - 1].text + ' ' + message.transcript
+            };
+            return updated;
           }
-        ]);
+          
+          // Otherwise create new message
+          return [
+            ...prev,
+            {
+              speaker: isUser ? 'user' : 'interviewer',
+              text: message.transcript,
+              timestamp: new Date()
+            }
+          ];
+        });
+        
         if (isUser) {
           setCurrentResponse(prev => prev + ' ' + message.transcript);
         }
@@ -115,7 +136,6 @@ export default function InterviewPage() {
         // Move to next question after analysis
         setTimeout(() => {
           interview.nextQuestion();
-          setTranscript("");
           setCurrentResponse("");
           setCurrentFeedback(null);
         }, 5000); // Show feedback for 5 seconds
@@ -169,14 +189,33 @@ export default function InterviewPage() {
 
   const handleEndInterview = async () => {
     try {
+      // Stop VAPI call if active
+      if (vapi.isCallActive) {
+        await vapi.stop();
+      }
+      
       if (currentResponse.trim()) {
         await interview.analyzeResponse(currentResponse);
       }
       await interview.endInterview();
-      router.push("/feedback");
+      // Navigate to Round 2 (Technical Interview)
+      router.push("/technical-interview");
     } catch (error) {
       console.error("Failed to end interview:", error);
-      router.push("/feedback");
+      // Navigate to technical round even if there's an error
+      router.push("/technical-interview");
+    }
+  };
+
+  const handleEndInterviewWithConfirmation = () => {
+    if (window.confirm("Are you sure you want to end Round 1? You will proceed to Round 2 (Technical Interview).")) {
+      handleEndInterview();
+    }
+  };
+
+  const handleSkipToTechnical = () => {
+    if (window.confirm("Skip Round 1 and go directly to the Technical Interview? You will not receive behavioral feedback.")) {
+      router.push("/technical-interview");
     }
   };
 
@@ -213,10 +252,10 @@ export default function InterviewPage() {
                 <p className="font-semibold">Behavioral</p>
               </div>
             </div>
-            <div className="flex flex-col sm:flex-row gap-4 pt-4">
+            <div className="flex flex-col gap-4 pt-4">
               <Button 
                 size="lg" 
-                className="flex-1 bg-primary hover:bg-primary/90"
+                className="w-full bg-primary hover:bg-primary/90"
                 onClick={handleStartInterview}
                 disabled={interview.isLoading}
               >
@@ -228,15 +267,26 @@ export default function InterviewPage() {
                 ) : (
                   <>
                     <Play className="mr-2 h-5 w-5" />
-                    Start Interview
+                    Start Round 1 - Behavioral
                   </>
                 )}
               </Button>
-              <Link href="/" className="flex-1">
-                <Button size="lg" variant="outline" className="w-full">
-                  Go Back
+              <div className="flex gap-4">
+                <Button 
+                  size="lg" 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={handleSkipToTechnical}
+                >
+                  <SkipForward className="mr-2 h-5 w-5" />
+                  Skip to Round 2
                 </Button>
-              </Link>
+                <Link href="/" className="flex-1">
+                  <Button size="lg" variant="outline" className="w-full">
+                    Go Back
+                  </Button>
+                </Link>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -245,39 +295,33 @@ export default function InterviewPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header with Progress */}
-      <header className="border-b border-border/40 backdrop-blur-sm sticky top-0 z-50 bg-background/80">
+    <div className="min-h-screen w-full bg-gradient-to-br from-background via-background to-background/95">
+      {/* Header */}
+      <header className="w-full border-b border-border/40 backdrop-blur-sm sticky top-0 z-50 bg-background/80">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center">
                 <Sparkles className="h-5 w-5 text-primary-foreground" />
               </div>
               <span className="text-lg font-bold">InterviewAI</span>
             </div>
-            <div className="flex items-center gap-4">
-              <Badge variant="secondary" className="text-sm">
-                <Clock className="h-3 w-3 mr-1" />
-                {formatTime(elapsedTime)}
-              </Badge>
-              <Badge variant="secondary" className="text-sm">
-                Question {interview.currentQuestionIndex + 1}/{interview.questions.length}
-              </Badge>
-            </div>
+            <Badge variant="secondary" className="text-sm px-4 py-2">
+              Round {Math.floor(interview.currentQuestionIndex / 2) + 1}
+            </Badge>
           </div>
-          <Progress value={progress} className="h-1" />
         </div>
       </header>
 
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
-        {interview.error && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{interview.error}</AlertDescription>
-          </Alert>
-        )}
-        <div className="grid lg:grid-cols-2 gap-8">
+      <div className="w-full min-h-[calc(100vh-64px)] px-6 py-4 bg-background flex flex-col">
+        <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col">
+          {interview.error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{interview.error}</AlertDescription>
+            </Alert>
+          )}
+          <div className="grid lg:grid-cols-2 gap-6 flex-1">
           {/* Left Column - Voice Visualizer & Controls */}
           <div className="space-y-6">
             {/* Question Card */}
@@ -286,7 +330,9 @@ export default function InterviewPage() {
                 <div className="flex items-start gap-3 mb-4">
                   <Volume2 className="h-5 w-5 text-primary mt-1 flex-shrink-0" />
                   <div>
-                    <h3 className="font-semibold mb-1">Question {interview.currentQuestionIndex + 1}</h3>
+                    <h3 className="font-semibold mb-1">
+                      Round {Math.floor(interview.currentQuestionIndex / 2) + 1} - {interview.currentQuestionIndex % 2 === 0 ? 'Behavioral' : 'Technical'}
+                    </h3>
                     <p className="text-lg text-foreground leading-relaxed">
                       {currentQuestion?.question_text || "Loading question..."}
                     </p>
@@ -370,53 +416,6 @@ export default function InterviewPage() {
                 </div>
               </CardContent>
             </Card>
-
-            {/* Control Buttons */}
-            <div className="flex gap-3">
-              <Button
-                size="lg"
-                variant={vapi.isCallActive ? "destructive" : "default"}
-                className="flex-1"
-                onClick={handleToggleRecording}
-                disabled={vapi.error !== null}
-              >
-                {vapi.isCallActive ? (
-                  <>
-                    <MicOff className="mr-2 h-5 w-5" />
-                    Stop Call
-                  </>
-                ) : (
-                  <>
-                    <Mic className="mr-2 h-5 w-5" />
-                    Start Call
-                  </>
-                )}
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={handleNextQuestion}
-                disabled={interview.isLastQuestion() || interview.isLoading}
-              >
-                {interview.isLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <SkipForward className="h-5 w-5" />
-                )}
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={handleEndInterview}
-                disabled={interview.isLoading}
-              >
-                {interview.isLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <StopCircle className="h-5 w-5" />
-                )}
-              </Button>
-            </div>
           </div>
 
           {/* Right Column - Transcript & Feedback */}
@@ -429,37 +428,25 @@ export default function InterviewPage() {
                   <h3 className="font-semibold">Conversation Transcript</h3>
                 </div>
                 <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {messages.length === 0 ? (
+                  {messages.filter(msg => msg.speaker === 'interviewer').length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground text-sm">
-                      Start speaking to see the transcript...
+                      Interviewer responses will appear here...
                     </div>
                   ) : (
-                    messages.map((msg, idx) => (
+                    messages.filter(msg => msg.speaker === 'interviewer').map((msg, idx) => (
                       <div 
                         key={idx}
-                        className={`flex gap-3 p-3 rounded-lg ${
-                          msg.speaker === 'user' 
-                            ? 'bg-primary/10 ml-4' 
-                            : 'bg-muted/50 mr-4'
-                        }`}
+                        className="flex gap-3 p-3 rounded-lg bg-muted/50"
                       >
                         <div className="flex-shrink-0">
-                          <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
-                            msg.speaker === 'user'
-                              ? 'bg-primary/20 text-primary'
-                              : 'bg-purple-500/20 text-purple-500'
-                          }`}>
-                            {msg.speaker === 'user' ? (
-                              <span className="text-xs font-bold">YOU</span>
-                            ) : (
-                              <span className="text-xs font-bold">AI</span>
-                            )}
+                          <div className="h-8 w-8 rounded-full flex items-center justify-center bg-purple-500/20 text-purple-500">
+                            <span className="text-xs font-bold">AI</span>
                           </div>
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-baseline gap-2 mb-1">
                             <span className="text-xs font-medium text-muted-foreground">
-                              {msg.speaker === 'user' ? 'You' : 'Interviewer'}
+                              Interviewer
                             </span>
                             <span className="text-xs text-muted-foreground/60">
                               {msg.timestamp.toLocaleTimeString()}
@@ -472,6 +459,7 @@ export default function InterviewPage() {
                       </div>
                     ))
                   )}
+                  <div ref={transcriptEndRef} />
                 </div>
               </CardContent>
             </Card>
@@ -484,11 +472,12 @@ export default function InterviewPage() {
               </Alert>
             )}
             
-            <FeedbackDisplay 
+            {/* Your Response - Commented out as requested */}
+            {/* <FeedbackDisplay 
               feedback={currentFeedback}
               transcript={currentResponse}
               isAnalyzing={isAnalyzing}
-            />
+            /> */}
 
             {/* Tips Card */}
             <Card className="bg-gradient-to-br from-primary/10 to-purple-600/10 border-primary/20">
@@ -503,6 +492,30 @@ export default function InterviewPage() {
               </CardContent>
             </Card>
           </div>
+        </div>
+        
+        {/* End Interview Button at Bottom */}
+        <div className="w-full max-w-7xl mx-auto mt-6 pb-4">
+          <Button
+            size="lg"
+            variant="destructive"
+            className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-6"
+            onClick={handleEndInterviewWithConfirmation}
+            disabled={interview.isLoading}
+          >
+            {interview.isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Ending Interview...
+              </>
+            ) : (
+              <>
+                <StopCircle className="mr-2 h-6 w-6" />
+                End Interview
+              </>
+            )}
+          </Button>
+        </div>
         </div>
       </div>
     </div>
