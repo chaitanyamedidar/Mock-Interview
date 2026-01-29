@@ -67,6 +67,8 @@ export const useInterview = () => {
           duration_minutes: params.duration,
           status: result.status,
           started_at: new Date().toISOString(),
+          assistant_id: result.assistant_id,
+          vapi_config: result.vapi_config,
         },
         questions: result.questions,
         isStarted: true,
@@ -81,46 +83,6 @@ export const useInterview = () => {
       throw error;
     }
   }, []);
-
-  const analyzeResponse = useCallback(async (responseText: string) => {
-    if (!state.session || state.currentQuestionIndex >= state.questions.length) {
-      throw new Error('No active session or invalid question index');
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const currentQuestion = state.questions[state.currentQuestionIndex];
-      
-      const analysis = await apiService.analyzeResponse({
-        session_id: state.session.session_id,
-        question_number: state.currentQuestionIndex + 1,
-        question: currentQuestion.question_text,
-        response: responseText,
-        interview_type: state.session.interview_type,
-      });
-
-      const newResponse = {
-        question: currentQuestion,
-        response_text: responseText,
-        analysis,
-      };
-
-      setState(prev => ({
-        ...prev,
-        responses: [...prev.responses, newResponse],
-        isLoading: false,
-      }));
-
-      return analysis;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to analyze response';
-      setError(errorMessage);
-      setLoading(false);
-      throw error;
-    }
-  }, [state.session, state.currentQuestionIndex, state.questions]);
 
   const nextQuestion = useCallback(() => {
     setState(prev => ({
@@ -178,7 +140,6 @@ export const useInterview = () => {
   return {
     ...state,
     startInterview,
-    analyzeResponse,
     nextQuestion,
     endInterview,
     resetInterview,

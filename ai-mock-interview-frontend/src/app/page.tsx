@@ -9,6 +9,9 @@ import { Sparkles, Target, Zap, BarChart3, Brain, Mic, Clock, Award } from "luci
 import Link from "next/link";
 
 const companies = [
+  { name: "JP Morgan", role: "Software Engineer", level: "Associate", difficulty: "Medium", questions: 5, duration: "30 min", logo: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=1470&auto=format&fit=crop" },
+  { name: "Capgemini", role: "Software Engineer", level: "Analyst", difficulty: "Medium", questions: 5, duration: "25 min", logo: "https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=1469&auto=format&fit=crop" },
+  { name: "Deloitte", role: "Software Engineer", level: "Consultant", difficulty: "Medium", questions: 5, duration: "28 min", logo: "https://images.unsplash.com/photo-1497366811353-6870744d04b2?q=80&w=1469&auto=format&fit=crop" },
   { name: "Google", role: "Software Engineer", level: "L4", difficulty: "Hard", questions: 12, duration: "45 min", logo: "https://images.unsplash.com/photo-1706426629246-2a3c3e3e3ff2?q=80&w=880&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" },
   { name: "Meta", role: "Product Manager", level: "IC4", difficulty: "Hard", questions: 10, duration: "40 min", logo: "https://images.unsplash.com/photo-1706879349328-4a05bb3e16ea?q=80&w=881&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" },
   { name: "Amazon", role: "Data Scientist", level: "L5", difficulty: "Medium", questions: 8, duration: "35 min", logo: "https://images.unsplash.com/photo-1704204656144-3dd12c110dd8?q=80&w=1409&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" },

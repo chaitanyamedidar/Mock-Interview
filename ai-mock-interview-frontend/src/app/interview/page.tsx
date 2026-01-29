@@ -24,7 +24,6 @@ import { useInterview } from "@/hooks/useInterview";
 import { InterviewType, DifficultyLevel } from "@/lib/api";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useVAPI } from "@/hooks/useVAPI";
-import FeedbackDisplay from "@/components/FeedbackDisplay";
 
 interface TranscriptMessage {
   speaker: 'user' | 'interviewer';
@@ -38,8 +37,6 @@ export default function InterviewPage() {
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [currentResponse, setCurrentResponse] = useState("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [currentFeedback, setCurrentFeedback] = useState<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to latest message
@@ -49,6 +46,8 @@ export default function InterviewPage() {
 
   // VAPI Integration
   const vapi = useVAPI({
+    assistantId: interview.session?.assistant_id,
+    assistantConfig: interview.session?.vapi_config,
     onMessage: (message) => {
       if (message.type === 'transcript' && message.transcript) {
         const isUser = message.role === 'user';
@@ -85,9 +84,7 @@ export default function InterviewPage() {
       setCurrentResponse('');
     },
     onCallEnd: () => {
-      if (currentResponse.trim()) {
-        handleAnalyzeResponse();
-      }
+      // Call ended
     },
     onError: (error) => {
       console.error('VAPI error:', error);
@@ -109,42 +106,6 @@ export default function InterviewPage() {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  // Analyze response with ML model
-  const handleAnalyzeResponse = async () => {
-    if (!currentResponse.trim()) return;
-    
-    setIsAnalyzing(true);
-    try {
-      const response = await fetch('/api/interview/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          session_id: interview.session?.session_id,
-          response_text: currentResponse,
-          interview_type: 'behavioral'
-        })
-      });
-
-      if (response.ok) {
-        const feedback = await response.json();
-        console.log('Received feedback:', feedback);
-        setCurrentFeedback(feedback);
-        // Move to next question after analysis
-        setTimeout(() => {
-          interview.nextQuestion();
-          setCurrentResponse("");
-          setCurrentFeedback(null);
-        }, 5000); // Show feedback for 5 seconds
-      }
-    } catch (error) {
-      console.error('Error analyzing response:', error);
-    } finally {
-      setIsAnalyzing(false);
-    }
   };
 
   const handleStartInterview = async () => {
@@ -171,20 +132,9 @@ export default function InterviewPage() {
   };
 
   const handleNextQuestion = async () => {
-    if (currentResponse.trim()) {
-      try {
-        await interview.analyzeResponse(currentResponse);
-        interview.nextQuestion();
-        setMessages([]);
-        setCurrentResponse("");
-      } catch (error) {
-        console.error("Failed to analyze response:", error);
-      }
-    } else {
-      interview.nextQuestion();
-      setMessages([]);
-      setCurrentResponse("");
-    }
+    interview.nextQuestion();
+    setMessages([]);
+    setCurrentResponse("");
   };
 
   const handleEndInterview = async () => {
@@ -194,9 +144,6 @@ export default function InterviewPage() {
         await vapi.stop();
       }
       
-      if (currentResponse.trim()) {
-        await interview.analyzeResponse(currentResponse);
-      }
       await interview.endInterview();
       // Navigate to Round 2 (Technical Interview)
       router.push("/technical-interview");

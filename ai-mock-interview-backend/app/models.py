@@ -71,26 +71,3 @@ class SessionResponse(Base):
     technical_accuracy_score = Column(DECIMAL(4, 2), nullable=True)
     overall_response_score = Column(DECIMAL(4, 2), nullable=True)
     response_rating = Column(String(20), nullable=True)
-
-class FeedbackDetail(Base):
-    """Detailed feedback for responses"""
-    __tablename__ = 'feedback_details'
-    
-    feedback_id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String(36), nullable=False)
-    response_id = Column(Integer, nullable=True)
-    feedback_type = Column(String(50), nullable=False)
-    feedback_text = Column(Text, nullable=False)
-    created_at = Column(TIMESTAMP, server_default=func.now())
-
-class MLTrainingData(Base):
-    """Store data for continuous ML model improvement"""
-    __tablename__ = 'ml_training_data'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    question_text = Column(Text, nullable=False)
-    response_text = Column(Text, nullable=False)
-    manual_label = Column(String(20), nullable=True)
-    features = Column(JSON, nullable=True)
-    created_at = Column(TIMESTAMP, server_default=func.now())
-    is_validated = Column(Boolean, default=False)

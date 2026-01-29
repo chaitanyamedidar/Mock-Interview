@@ -12,3 +12,4 @@ interview_platform.db
 # Git backups
 .git.backup/
 *.git.backup/
+.agent

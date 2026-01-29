@@ -10,12 +10,11 @@ from sqlalchemy.orm import Session
 
 # Import custom modules
 from .database import get_db, SessionLocal, init_database
-from .models import InterviewSession, SessionResponse, FeedbackDetail, InterviewQuestion
-from .ml_service import InterviewAnalyzer
+from .models import InterviewSession, SessionResponse, InterviewQuestion
 from .vapi_service import VAPIManager
 from .resume_service import ATSResumeAnalyzer
 from .file_parser import FileParser
-from .file_parser import FileParser
+from .question_service import get_question_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -40,7 +39,6 @@ app.add_middleware(
 )
 
 # Initialize services
-analyzer = InterviewAnalyzer()
 vapi_manager = VAPIManager()
 resume_analyzer = ATSResumeAnalyzer()
 
@@ -56,23 +54,6 @@ class InterviewStartResponse(BaseModel):
     questions: List[Dict[str, Any]]
     vapi_config: Dict[str, Any]
     assistant_id: Optional[str] = None
-
-class ResponseAnalysisRequest(BaseModel):
-    session_id: str
-    response_text: str
-    question_id: int
-    question_number: int
-
-class ResponseAnalysisResult(BaseModel):
-    response_id: int
-    quality_score: float
-    content_quality: float
-    communication: float
-    confidence: float
-    technical_accuracy: float
-    rating: str
-    feedback: List[Dict[str, str]]
-    metrics: Dict[str, Any]
 
 class EndInterviewRequest(BaseModel):
     session_id: str
@@ -120,7 +101,6 @@ async def health_check():
         "status": "healthy",
         "services": {
             "database": "connected",
-            "ml_model": "loaded" if analyzer.model else "rule_based",
             "vapi": "configured" if vapi_manager.api_key else "not_configured"
         },
         "timestamp": datetime.utcnow().isoformat()
@@ -186,83 +166,7 @@ async def start_interview(request: InterviewStartRequest, db: Session = Depends(
         logger.error(f"Error starting interview: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/interview/analyze-response", response_model=ResponseAnalysisResult)
-async def analyze_response(request: ResponseAnalysisRequest, db: Session = Depends(get_db)):
-    """
-    Analyze a single interview response using ML model
-    """
-    try:
-        # Get question details
-        question = db.query(InterviewQuestion).filter(
-            InterviewQuestion.question_id == request.question_id
-        ).first()
-        
-        if not question:
-            raise HTTPException(status_code=404, detail="Question not found")
-        
-        # Get session details
-        session = db.query(InterviewSession).filter(
-            InterviewSession.session_id == request.session_id
-        ).first()
-        
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-        
-        # Analyze response using ML model
-        analysis = analyzer.analyze_response(
-            response_text=request.response_text,
-            question_text=question.question_text,
-            interview_type=session.interview_type
-        )
-        
-        # Store response in database
-        response_record = SessionResponse(
-            session_id=request.session_id,
-            question_id=request.question_id,
-            question_number=request.question_number,
-            response_text=request.response_text,
-            word_count=analysis['features'].get('word_count', 0),
-            filler_word_count=analysis['features'].get('filler_word_count', 0),
-            technical_term_count=analysis['features'].get('technical_term_count', 0),
-            average_word_length=analysis['features'].get('avg_word_length', 0),
-            content_quality_score=analysis['scores']['content_quality'],
-            communication_score=analysis['scores']['communication'],
-            confidence_score=analysis['scores']['confidence'],
-            technical_accuracy_score=analysis['scores']['technical_accuracy'],
-            overall_response_score=analysis['overall_score'],
-            response_rating=analysis['rating']
-        )
-        db.add(response_record)
-        db.commit()
-        db.refresh(response_record)
-        
-        # Generate and store feedback
-        feedback_suggestions = analyzer.generate_feedback_suggestions(analysis)
-        for feedback_item in feedback_suggestions:
-            feedback = FeedbackDetail(
-                session_id=request.session_id,
-                response_id=response_record.response_id,
-                feedback_type=feedback_item['type'],
-                feedback_text=feedback_item['message']
-            )
-            db.add(feedback)
-        db.commit()
-        
-        return ResponseAnalysisResult(
-            response_id=response_record.response_id,
-            quality_score=analysis['overall_score'],
-            content_quality=analysis['scores']['content_quality'],
-            communication=analysis['scores']['communication'],
-            confidence=analysis['scores']['confidence'],
-            technical_accuracy=analysis['scores']['technical_accuracy'],
-            rating=analysis['rating'],
-            feedback=feedback_suggestions,
-            metrics=analysis['features']
-        )
-        
-    except Exception as e:
-        logger.error(f"Error analyzing response: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/interview/end", response_model=FeedbackResponse)
 async def end_interview(request: EndInterviewRequest, db: Session = Depends(get_db)):
@@ -304,11 +208,6 @@ async def end_interview(request: EndInterviewRequest, db: Session = Depends(get_
                 InterviewQuestion.question_id == response.question_id
             ).first()
             
-            # Get feedback for this response
-            feedback_items = db.query(FeedbackDetail).filter(
-                FeedbackDetail.response_id == response.response_id
-            ).all()
-            
             question_breakdown.append({
                 'question_number': response.question_number,
                 'question_text': question.question_text if question else "Question not found",
@@ -320,8 +219,7 @@ async def end_interview(request: EndInterviewRequest, db: Session = Depends(get_
                     'technical_accuracy': float(response.technical_accuracy_score or 0),
                     'overall': float(response.overall_response_score or 0)
                 },
-                'rating': response.response_rating,
-                'feedback': [{'type': f.feedback_type, 'message': f.feedback_text} for f in feedback_items]
+                'rating': response.response_rating
             })
         
         return FeedbackResponse(
@@ -657,6 +555,141 @@ async def analyze_resume(
 
 # R
 # Run the application
+
+
+# ============================================================================
+# CODING QUESTION ENDPOINTS
+# ============================================================================
+
+@app.get("/api/v1/questions/stats")
+async def get_question_stats():
+    """Get statistics about the question database."""
+    try:
+        service = get_question_service()
+        return service.get_statistics()
+    except Exception as e:
+        logger.error(f"Error getting question stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/questions/random")
+async def get_random_question(
+    company: Optional[str] = None,
+    difficulty: Optional[str] = None,
+    topic: Optional[str] = None
+):
+    """
+    Get a random question matching the specified filters.
+    
+    Query Parameters:
+        company: Filter by company (e.g., "JP Morgan", "Capgemini", "Deloitte")
+        difficulty: Filter by difficulty ("Easy", "Medium", "Hard")
+        topic: Filter by topic (e.g., "Array", "Hash Table", "Dynamic Programming")
+    """
+    try:
+        service = get_question_service()
+        question = service.get_random_question(company=company, difficulty=difficulty, topic=topic)
+        
+        if not question:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No questions found matching filters: company={company}, difficulty={difficulty}, topic={topic}"
+            )
+        
+        return question
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting random question: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/questions/{question_id}")
+async def get_question_by_id(question_id: str):
+    """Get a specific question by its ID."""
+    try:
+        service = get_question_service()
+        question = service.get_question_by_id(question_id)
+        
+        if not question:
+            raise HTTPException(status_code=404, detail=f"Question not found: {question_id}")
+        
+        return question
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting question by ID: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/questions/company/{company}")
+async def get_questions_by_company(company: str):
+    """Get all questions for a specific company."""
+    try:
+        service = get_question_service()
+        questions = service.get_questions_by_company(company)
+        
+        return {
+            "company": company,
+            "count": len(questions),
+            "questions": questions
+        }
+    except Exception as e:
+        logger.error(f"Error getting questions by company: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/questions/difficulty/{difficulty}")
+async def get_questions_by_difficulty(difficulty: str):
+    """Get all questions of a specific difficulty level."""
+    try:
+        service = get_question_service()
+        questions = service.get_questions_by_difficulty(difficulty)
+        
+        return {
+            "difficulty": difficulty,
+            "count": len(questions),
+            "questions": questions
+        }
+    except Exception as e:
+        logger.error(f"Error getting questions by difficulty: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/questions/topic/{topic}")
+async def get_questions_by_topic(topic: str):
+    """Get all questions for a specific topic."""
+    try:
+        service = get_question_service()
+        questions = service.get_questions_by_topic(topic)
+        
+        return {
+            "topic": topic,
+            "count": len(questions),
+            "questions": questions
+        }
+    except Exception as e:
+        logger.error(f"Error getting questions by topic: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/questions/search")
+async def search_questions(q: str, limit: int = 10):
+    """
+    Search questions by title or description.
+    
+    Query Parameters:
+        q: Search query string
+        limit: Maximum number of results (default: 10)
+    """
+    try:
+        service = get_question_service()
+        questions = service.search_questions(query=q, limit=limit)
+        
+        return {
+            "query": q,
+            "count": len(questions),
+            "questions": questions
+        }
+    except Exception as e:
+        logger.error(f"Error searching questions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(

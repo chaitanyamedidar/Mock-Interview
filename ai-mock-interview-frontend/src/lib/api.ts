@@ -24,6 +24,8 @@ export interface InterviewSession {
   started_at: string;
   overall_score?: number;
   overall_rating?: string;
+  assistant_id?: string;
+  vapi_config?: any;
 }
 
 export interface InterviewQuestion {
@@ -71,7 +73,7 @@ export interface FeedbackResponse {
 class APIService {
   private async fetchAPI(endpoint: string, options: RequestInit = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
-    
+
     const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
@@ -99,6 +101,8 @@ class APIService {
     status: string;
     questions: InterviewQuestion[];
     vapi_call_url?: string;
+    assistant_id?: string;
+    vapi_config?: any;
   }> {
     return this.fetchAPI('/api/interview/start', {
       method: 'POST',
@@ -124,20 +128,6 @@ class APIService {
     return this.fetchAPI(`/api/questions/${interviewType}?${params.toString()}`);
   }
 
-  // Analyze a response
-  async analyzeResponse(params: {
-    session_id: string;
-    question_number: number;
-    question: string;
-    response: string;
-    interview_type: string;
-  }): Promise<ResponseAnalysis> {
-    return this.fetchAPI('/api/interview/analyze-response', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    });
-  }
-
   // End interview and get feedback
   async endInterview(sessionId: string): Promise<FeedbackResponse> {
     return this.fetchAPI('/api/interview/end', {
@@ -154,6 +144,26 @@ class APIService {
   // Health check
   async healthCheck(): Promise<{ status: string; message: string; version: string }> {
     return this.fetchAPI('/');
+  }
+
+  // Get random coding question
+  async getRandomCodingQuestion(params?: { company?: string; difficulty?: string; topic?: string }): Promise<any> {
+    const queryParams = new URLSearchParams();
+    if (params?.company) queryParams.append('company', params.company);
+    if (params?.difficulty) queryParams.append('difficulty', params.difficulty);
+    if (params?.topic) queryParams.append('topic', params.topic);
+    const query = queryParams.toString();
+    return this.fetchAPI(`/api/v1/questions/random${query ? `?${query}` : ''}`);
+  }
+
+  // Get coding question by ID
+  async getCodingQuestionById(questionId: string): Promise<any> {
+    return this.fetchAPI(`/api/v1/questions/${questionId}`);
+  }
+
+  // Get questions by company
+  async getQuestionsByCompany(company: string): Promise<{ company: string; count: number; questions: any[] }> {
+    return this.fetchAPI(`/api/v1/questions/company/${encodeURIComponent(company)}`);
   }
 }
 

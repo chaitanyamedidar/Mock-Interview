@@ -6,6 +6,7 @@ import Vapi from '@vapi-ai/web';
 export interface VAPIConfig {
   apiKey?: string;
   assistantId?: string;
+  assistantConfig?: any; // VAPI assistant configuration object
   onCallStart?: () => void;
   onCallEnd?: () => void;
   onSpeechStart?: () => void;
@@ -136,14 +137,21 @@ export function useVAPI(config: Partial<VAPIConfig> = {}): VAPICall {
     setIsLoading(true);
     try {
       console.log('🚀 Starting VAPI call...');
-      console.log('📋 Assistant ID:', assistantId || 'Using inline config');
+      console.log('📋 Assistant ID:', assistantId || 'No assistant ID');
+      console.log('📋 Has Assistant Config:', !!config.assistantConfig);
       
       if (assistantId) {
-        // Use assistant ID
+        // Use assistant ID (preferred if backend created one)
+        console.log('✅ Using assistant ID from backend');
         await vapiRef.current.start(assistantId);
+      } else if (config.assistantConfig) {
+        // Use provided assistant configuration (contains questions)
+        console.log('✅ Using assistant config from backend with questions');
+        await vapiRef.current.start(config.assistantConfig);
       } else {
-        // Use inline assistant configuration
-        const assistantConfig = {
+        // Fallback: Use basic inline assistant configuration
+        console.log('⚠️ Using fallback assistant config (no questions)');
+        const fallbackConfig = {
           model: {
             provider: "openai" as const,
             model: "gpt-3.5-turbo",
@@ -165,7 +173,7 @@ export function useVAPI(config: Partial<VAPIConfig> = {}): VAPICall {
           }
         };
         
-        await vapiRef.current.start(assistantConfig as any);
+        await vapiRef.current.start(fallbackConfig as any);
       }
       
       console.log('✅ VAPI call started successfully');
@@ -175,7 +183,7 @@ export function useVAPI(config: Partial<VAPIConfig> = {}): VAPICall {
     } finally {
       setIsLoading(false);
     }
-  }, [assistantId]);
+  }, [assistantId, config.assistantConfig]);
 
   const stop = useCallback(async () => {
     if (!vapiRef.current) return;

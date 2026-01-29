@@ -18,8 +18,9 @@ import {
   Mic,
   MicOff,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useVAPI } from "@/hooks/useVAPI";
+import { apiService } from "@/lib/api";
 
 interface CodeSnapshot {
   code: string;
@@ -37,49 +38,23 @@ export default function TechnicalInterviewPage() {
   const [showHint, setShowHint] = useState(false);
   const [voiceHelpActive, setVoiceHelpActive] = useState(false);
   const [voiceHelpDuration, setVoiceHelpDuration] = useState(0);
+  const [question, setQuestion] = useState<any>(null);
+  const [isLoadingQuestion, setIsLoadingQuestion] = useState(true);
+  const [questionError, setQuestionError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
   const snapshotIntervalRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const inactivityTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const maxDurationTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const reminderIntervalRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const durationIntervalRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
-  // Sample technical question (will be dynamic in production)
-  const question = {
-    title: "Two Sum",
-    difficulty: "Easy",
-    description:
-      "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target. You may assume that each input would have exactly one solution, and you may not use the same element twice.",
-    examples: [
-      {
-        input: "nums = [2,7,11,15], target = 9",
-        output: "[0,1]",
-        explanation: "Because nums[0] + nums[1] == 9, we return [0, 1].",
-      },
-      {
-        input: "nums = [3,2,4], target = 6",
-        output: "[1,2]",
-        explanation: "Because nums[1] + nums[2] == 6, we return [1, 2].",
-      },
-    ],
-    constraints: [
-      "2 <= nums.length <= 10^4",
-      "-10^9 <= nums[i] <= 10^9",
-      "-10^9 <= target <= 10^9",
-      "Only one valid answer exists.",
-    ],
-    hints: [
-      "A brute force approach would involve checking every pair of numbers.",
-      "Can you use a hash map to store numbers you've already seen?",
-      "For each number, check if (target - number) exists in the hash map.",
-    ],
-  };
 
   // VAPI Integration
   const vapi = useVAPI({
     onMessage: (message) => {
       // Reset inactivity timer on any VAPI message
       resetInactivityTimer();
-      
+
       // Handle VAPI messages
       if (message.type === "function-call" && message.functionCall?.name === "requestHint") {
         setShowHint(true);
@@ -102,23 +77,62 @@ export default function TechnicalInterviewPage() {
     },
   });
 
+  // Fetch question on mount
+  useEffect(() => {
+    const fetchQuestion = async () => {
+      try {
+        setIsLoadingQuestion(true);
+        setQuestionError(null);
+
+        // Get company from URL params if available
+        const company = searchParams?.get('company') || undefined;
+        const difficulty = searchParams?.get('difficulty') || undefined;
+
+        const fetchedQuestion = await apiService.getRandomCodingQuestion({
+          company,
+          difficulty
+        });
+
+        setQuestion(fetchedQuestion);
+      } catch (error) {
+        console.error('Failed to fetch question:', error);
+        setQuestionError('Failed to load question. Please try again.');
+        // Fallback to hardcoded question
+        setQuestion({
+          title: "Two Sum",
+          difficulty: "Easy",
+          description: "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.",
+          examples: [
+            { input: "nums = [2,7,11,15], target = 9", output: "[0,1]", explanation: "Because nums[0] + nums[1] == 9, we return [0, 1]." }
+          ],
+          constraints: ["2 <= nums.length <= 10^4"],
+          hints: ["Use a hash map to store numbers you've already seen."],
+        });
+      } finally {
+        setIsLoadingQuestion(false);
+      }
+    };
+
+    fetchQuestion();
+  }, [searchParams]);
+
   // Start voice help timers
   const startVoiceHelpTimers = () => {
     // Reset inactivity timer (90 seconds)
     resetInactivityTimer();
-    
+
     // Max duration timer (5 minutes)
     maxDurationTimerRef.current = setTimeout(() => {
       console.log("Max voice help duration reached (5 minutes)");
       endVoiceHelp();
     }, 5 * 60 * 1000);
-    
+
     // Periodic reminders (every 1 minute)
     reminderIntervalRef.current = setInterval(() => {
       console.log("Voice help reminder: Still active");
       // Optionally send a subtle reminder to VAPI
     }, 60 * 1000);
-    
+
     // Duration counter (update every second)
     durationIntervalRef.current = setInterval(() => {
       setVoiceHelpDuration(prev => prev + 1);
@@ -130,7 +144,7 @@ export default function TechnicalInterviewPage() {
     if (inactivityTimerRef.current) {
       clearTimeout(inactivityTimerRef.current);
     }
-    
+
     inactivityTimerRef.current = setTimeout(() => {
       console.log("Voice help inactivity timeout (90 seconds)");
       endVoiceHelp();
@@ -211,12 +225,12 @@ export default function TechnicalInterviewPage() {
   // Handle paste event
   const handleEditorPaste = (e: any) => {
     const pastedText = e.clipboardData?.getData("text") || "";
-    
+
     if (pastedText.length > 100) {
       const alert = `Large paste detected: ${pastedText.length} characters`;
       setSuspiciousActivity((prev) => [...prev, alert]);
       console.warn(alert);
-      
+
       // Optionally show warning to user
       if (window.confirm("Large code paste detected. Are you sure you want to paste this code? This activity is being monitored.")) {
         return true;
@@ -230,7 +244,7 @@ export default function TechnicalInterviewPage() {
   // Request hint from VAPI
   const requestHint = () => {
     setShowHint(true);
-    
+
     // Send request to VAPI if voice help is active
     if (voiceHelpActive && vapi.send) {
       vapi.send({
@@ -372,124 +386,140 @@ export default function TechnicalInterviewPage() {
         <div className="flex-1 grid lg:grid-cols-2 gap-0">
           {/* Left Panel - Question & Hints */}
           <div className="border-r border-border/40 overflow-y-auto p-6 bg-background">
-            <div className="max-w-3xl mx-auto space-y-6">
-              {/* Question Title */}
-              <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold">{question.title}</h1>
-                <Badge
-                  variant={
-                    question.difficulty === "Easy"
-                      ? "default"
-                      : question.difficulty === "Medium"
-                      ? "secondary"
-                      : "destructive"
-                  }
-                >
-                  {question.difficulty}
-                </Badge>
+            {isLoadingQuestion ? (
+              <div className="max-w-3xl mx-auto flex items-center justify-center h-full">
+                <div className="text-center space-y-4">
+                  <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
+                  <p className="text-muted-foreground">Loading your coding question...</p>
+                </div>
               </div>
+            ) : questionError ? (
+              <div className="max-w-3xl mx-auto">
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{questionError}</AlertDescription>
+                </Alert>
+              </div>
+            ) : question ? (
+              <div className="max-w-3xl mx-auto space-y-6">
+                {/* Question Title */}
+                <div className="flex items-center justify-between">
+                  <h1 className="text-2xl font-bold">{question.title}</h1>
+                  <Badge
+                    variant={
+                      question.difficulty === "Easy"
+                        ? "default"
+                        : question.difficulty === "Medium"
+                          ? "secondary"
+                          : "destructive"
+                    }
+                  >
+                    {question.difficulty}
+                  </Badge>
+                </div>
 
-              {/* Description */}
-              <Card className="bg-card/50 border-border/40">
-                <CardContent className="p-6">
-                  <h3 className="font-semibold mb-3">Description</h3>
-                  <p className="text-muted-foreground leading-relaxed">
-                    {question.description}
-                  </p>
-                </CardContent>
-              </Card>
+                {/* Description */}
+                <Card className="bg-card/50 border-border/40">
+                  <CardContent className="p-6">
+                    <h3 className="font-semibold mb-3">Description</h3>
+                    <p className="text-muted-foreground leading-relaxed">
+                      {question.description}
+                    </p>
+                  </CardContent>
+                </Card>
 
-              {/* Examples */}
-              <Card className="bg-card/50 border-border/40">
-                <CardContent className="p-6">
-                  <h3 className="font-semibold mb-4">Examples</h3>
-                  <div className="space-y-4">
-                    {question.examples.map((example, idx) => (
-                      <div key={idx} className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">Example {idx + 1}:</span>
-                        </div>
-                        <div className="bg-muted/30 p-3 rounded font-mono text-sm space-y-1">
-                          <div>
-                            <span className="text-muted-foreground">Input:</span> {example.input}
+                {/* Examples */}
+                <Card className="bg-card/50 border-border/40">
+                  <CardContent className="p-6">
+                    <h3 className="font-semibold mb-4">Examples</h3>
+                    <div className="space-y-4">
+                      {question.examples.map((example, idx) => (
+                        <div key={idx} className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">Example {idx + 1}:</span>
                           </div>
-                          <div>
-                            <span className="text-muted-foreground">Output:</span> {example.output}
-                          </div>
-                          {example.explanation && (
-                            <div className="text-muted-foreground text-xs pt-2">
-                              {example.explanation}
+                          <div className="bg-muted/30 p-3 rounded font-mono text-sm space-y-1">
+                            <div>
+                              <span className="text-muted-foreground">Input:</span> {example.input}
                             </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Constraints */}
-              <Card className="bg-card/50 border-border/40">
-                <CardContent className="p-6">
-                  <h3 className="font-semibold mb-3">Constraints</h3>
-                  <ul className="space-y-2 text-sm text-muted-foreground">
-                    {question.constraints.map((constraint, idx) => (
-                      <li key={idx} className="flex items-start gap-2">
-                        <span className="text-primary mt-1">•</span>
-                        <span className="font-mono">{constraint}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Hints Section */}
-              <Card className="bg-gradient-to-br from-amber-50/50 to-orange-50/50 dark:from-amber-950/20 dark:to-orange-950/20 border-amber-200/50 dark:border-amber-800/50">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-semibold flex items-center gap-2">
-                      <Lightbulb className="h-5 w-5 text-amber-600" />
-                      Hints
-                    </h3>
-                    {!showHint && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={requestHint}
-                        className="text-amber-700 border-amber-300"
-                      >
-                        Request Hint
-                      </Button>
-                    )}
-                  </div>
-                  {showHint ? (
-                    <div className="space-y-3">
-                      {question.hints.map((hint, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-start gap-2 text-sm text-muted-foreground"
-                        >
-                          <span className="text-amber-600 font-bold">{idx + 1}.</span>
-                          <span>{hint}</span>
+                            <div>
+                              <span className="text-muted-foreground">Output:</span> {example.output}
+                            </div>
+                            {example.explanation && (
+                              <div className="text-muted-foreground text-xs pt-2">
+                                {example.explanation}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Click "Request Hint" if you need help. You can also ask the interviewer for hints via voice.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
 
-              {/* VAPI Error */}
-              {vapi.error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{vapi.error}</AlertDescription>
-                </Alert>
-              )}
-            </div>
+                {/* Constraints */}
+                <Card className="bg-card/50 border-border/40">
+                  <CardContent className="p-6">
+                    <h3 className="font-semibold mb-3">Constraints</h3>
+                    <ul className="space-y-2 text-sm text-muted-foreground">
+                      {question.constraints.map((constraint, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <span className="text-primary mt-1">•</span>
+                          <span className="font-mono">{constraint}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+
+                {/* Hints Section */}
+                <Card className="bg-gradient-to-br from-amber-50/50 to-orange-50/50 dark:from-amber-950/20 dark:to-orange-950/20 border-amber-200/50 dark:border-amber-800/50">
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold flex items-center gap-2">
+                        <Lightbulb className="h-5 w-5 text-amber-600" />
+                        Hints
+                      </h3>
+                      {!showHint && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={requestHint}
+                          className="text-amber-700 border-amber-300"
+                        >
+                          Request Hint
+                        </Button>
+                      )}
+                    </div>
+                    {showHint ? (
+                      <div className="space-y-3">
+                        {question.hints.map((hint, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-start gap-2 text-sm text-muted-foreground"
+                          >
+                            <span className="text-amber-600 font-bold">{idx + 1}.</span>
+                            <span>{hint}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Click "Request Hint" if you need help. You can also ask the interviewer for hints via voice.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* VAPI Error */}
+                {vapi.error && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{vapi.error}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            ) : null}
           </div>
 
           {/* Right Panel - Code Editor */}
