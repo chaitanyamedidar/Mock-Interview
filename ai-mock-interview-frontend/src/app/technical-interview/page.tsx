@@ -313,6 +313,7 @@ export default function TechnicalInterviewPage() {
           snapshots,
           suspiciousActivity,
           question: question ? question.title : "Unknown",
+          question_description: question ? question.description : "",
         }),
       });
 

@@ -101,3 +101,33 @@ class InterviewReport(Base):
     
     # Call metadata
     call_duration_seconds = Column(Integer, nullable=True)
+
+
+class TechnicalSubmission(Base):
+    """Technical interview code submission and evaluation"""
+    __tablename__ = 'technical_submissions'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(36), nullable=False, index=True)
+    
+    # Question details
+    question_title = Column(String(255), nullable=False)
+    question_description = Column(Text, nullable=True)
+    
+    # Submission details
+    code = Column(Text, nullable=False)
+    language = Column(String(50), nullable=False)
+    
+    # Evaluation scores (stored as JSON)
+    scores = Column(JSON, nullable=True)  # {correctness, code_quality, efficiency, best_practices}
+    overall_score = Column(DECIMAL(5, 2), nullable=True)
+    
+    # Analysis results
+    time_complexity = Column(String(50), nullable=True)
+    space_complexity = Column(String(50), nullable=True)
+    strengths = Column(JSON, nullable=True)  # List of strings
+    improvements = Column(JSON, nullable=True)  # List of strings
+    feedback = Column(Text, nullable=True)
+    
+    # Metadata
+    created_at = Column(TIMESTAMP, server_default=func.now())

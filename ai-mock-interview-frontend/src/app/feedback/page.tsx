@@ -20,7 +20,10 @@ import {
   Home,
   Download,
   Share2,
-  Loader2
+  Loader2,
+  Code2,
+  Zap,
+  BookOpen
 } from "lucide-react";
 import Link from "next/link";
 import { getScoreColor as getScoreColorUtil } from "@/lib/api";
@@ -52,14 +55,36 @@ interface AnalysisData {
   metadata: any;
 }
 
+interface TechnicalData {
+  session_id: string;
+  question_title: string;
+  question_description: string;
+  code: string;
+  language: string;
+  overall_score: number;
+  scores: {
+    correctness?: number;
+    code_quality?: number;
+    efficiency?: number;
+    best_practices?: number;
+  };
+  time_complexity: string;
+  space_complexity: string;
+  strengths: string[];
+  improvements: string[];
+  feedback: string;
+}
+
 export default function FeedbackPage() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get('session_id');
 
   const [data, setData] = useState<AnalysisData | null>(null);
+  const [technicalData, setTechnicalData] = useState<TechnicalData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedQuestion, setSelectedQuestion] = useState(0);
+  const [activeRound, setActiveRound] = useState<"round1" | "round2">("round1");
 
   useEffect(() => {
     if (!sessionId) {
@@ -68,33 +93,36 @@ export default function FeedbackPage() {
       return;
     }
 
-    const fetchData = async () => {
+    const fetchAllData = async () => {
       try {
-        const response = await fetch(`http://localhost:8000/api/v1/interview/results/${sessionId}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch results');
+        // Fetch Round 1 (Behavioral) results
+        const behavioralResponse = await fetch(`http://localhost:8000/api/v1/interview/results/${sessionId}`);
+        if (behavioralResponse.ok) {
+          const result = await behavioralResponse.json();
+          if (behavioralResponse.status !== 202) {
+            setData(result);
+          }
         }
 
-        const result = await response.json();
-
-        // Handle "Processing" state (202)
-        if (response.status === 202) {
-          setTimeout(fetchData, 2000); // Poll again
-          return;
+        // Fetch Round 2 (Technical) results
+        const technicalResponse = await fetch(`http://localhost:8000/api/v1/technical/results/${sessionId}`);
+        if (technicalResponse.ok) {
+          const techResult = await technicalResponse.json();
+          setTechnicalData(techResult);
         }
 
-        setData(result);
+        setLoading(false);
       } catch (err: any) {
+        console.error("Error fetching data:", err);
         setError(err.message);
-      } finally {
-        if (data) setLoading(false);
+        setLoading(false);
       }
     };
 
-    fetchData();
-  }, [sessionId, data]); // Add data to dependency to stop polling once set
+    fetchAllData();
+  }, [sessionId]);
 
-  if (loading && !data) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
@@ -106,7 +134,7 @@ export default function FeedbackPage() {
     );
   }
 
-  if (error) {
+  if (error && !data && !technicalData) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Card className="max-w-md w-full">
@@ -124,14 +152,40 @@ export default function FeedbackPage() {
     );
   }
 
-  if (!data) return null;
+  if (!data && !technicalData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Card className="max-w-md w-full">
+          <CardHeader>
+            <CardTitle>No Results Found</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground">No interview data found for this session.</p>
+            <Link href="/">
+              <Button className="mt-4 w-full">Return Home</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
-  const { report_summary, questions_breakdown, ai_recommendations } = data;
+  const report_summary = data?.report_summary;
+  const questions_breakdown = data?.questions_breakdown;
+  const ai_recommendations = data?.ai_recommendations;
+  
   const metrics = [
     { label: "Communication", key: "communication", icon: MessageSquare },
     { label: "Technical Skills", key: "technical_skills", icon: Target },
     { label: "Problem Solving", key: "problem_solving", icon: Sparkles },
     { label: "Time Management", key: "time_management", icon: Clock },
+  ];
+
+  const technicalMetrics = [
+    { label: "Correctness", key: "correctness", icon: CheckCircle2 },
+    { label: "Code Quality", key: "code_quality", icon: Code2 },
+    { label: "Efficiency", key: "efficiency", icon: Zap },
+    { label: "Best Practices", key: "best_practices", icon: BookOpen },
   ];
 
   const getScoreColor = (score: number) => {
@@ -179,31 +233,64 @@ export default function FeedbackPage() {
           </Badge>
           <h1 className="text-4xl md:text-5xl font-bold mb-4">Your Performance Report</h1>
           <p className="text-muted-foreground text-lg">
-            {report_summary.performance_label}! Here's how you did.
+            {report_summary?.performance_label || "Complete"}! Here's how you did.
           </p>
         </div>
 
-        {/* Overall Score Card */}
-        <Card className="bg-gradient-to-br from-primary/10 to-purple-600/10 border-primary/20 mb-8">
-          <CardContent className="p-8">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-8">
-              <div className="flex-1 text-center md:text-left">
-                <h2 className="text-2xl font-bold mb-2">Overall Score</h2>
-                <p className="text-muted-foreground mb-4">
-                  Based on {report_summary.total_questions_analyzed} questions analyzed
-                </p>
-                <div className="flex items-center gap-4 justify-center md:justify-start">
-                  <div className={`text-6xl font-bold ${getScoreColor(report_summary.overall_score)}`}>
-                    {report_summary.overall_score}
-                  </div>
-                  <div className="text-left">
-                    <div className="text-2xl font-bold text-muted-foreground">/100</div>
-                    <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
-                      <TrendingUp className="h-3 w-3 mr-1" />
-                      {report_summary.performance_label}
-                    </Badge>
-                  </div>
-                </div>
+        {/* Round Selection Tabs */}
+        <div className="flex justify-center mb-8">
+          <div className="inline-flex rounded-lg border border-border/40 p-1 bg-muted/30">
+            <button
+              onClick={() => setActiveRound("round1")}
+              className={`px-6 py-3 rounded-md text-sm font-medium transition-all ${
+                activeRound === "round1"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <MessageSquare className="h-4 w-4 inline mr-2" />
+              Round 1 - Behavioral
+              {data && <Badge variant="secondary" className="ml-2">{Math.round(report_summary?.overall_score || 0)}</Badge>}
+            </button>
+            <button
+              onClick={() => setActiveRound("round2")}
+              className={`px-6 py-3 rounded-md text-sm font-medium transition-all ${
+                activeRound === "round2"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Code2 className="h-4 w-4 inline mr-2" />
+              Round 2 - Technical
+              {technicalData && <Badge variant="secondary" className="ml-2">{Math.round(technicalData.overall_score)}</Badge>}
+            </button>
+          </div>
+        </div>
+
+        {/* Round 1 - Behavioral Content */}
+        {activeRound === "round1" && data && report_summary && (
+          <>
+            {/* Overall Score Card */}
+            <Card className="bg-gradient-to-br from-primary/10 to-purple-600/10 border-primary/20 mb-8">
+              <CardContent className="p-8">
+                <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+                  <div className="flex-1 text-center md:text-left">
+                    <h2 className="text-2xl font-bold mb-2">Behavioral Interview Score</h2>
+                    <p className="text-muted-foreground mb-4">
+                      Based on {report_summary.total_questions_analyzed} questions analyzed
+                    </p>
+                    <div className="flex items-center gap-4 justify-center md:justify-start">
+                      <div className={`text-6xl font-bold ${getScoreColor(report_summary.overall_score)}`}>
+                        {Math.round(report_summary.overall_score)}
+                      </div>
+                      <div className="text-left">
+                        <div className="text-2xl font-bold text-muted-foreground">/100</div>
+                        <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
+                          <TrendingUp className="h-3 w-3 mr-1" />
+                          {report_summary.performance_label}
+                        </Badge>
+                      </div>
+                    </div>
               </div>
               <div className="flex-1 w-full">
                 <div className="grid grid-cols-2 gap-4">
@@ -384,6 +471,199 @@ export default function FeedbackPage() {
             </Card>
           </div>
         </div>
+          </>
+        )}
+
+        {/* Round 1 - No Data State */}
+        {activeRound === "round1" && !data && (
+          <Card className="bg-card/50 border-border/40">
+            <CardContent className="p-12 text-center">
+              <MessageSquare className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-xl font-semibold mb-2">No Behavioral Interview Data</h3>
+              <p className="text-muted-foreground">Round 1 results are not available for this session.</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Round 2 - Technical Content */}
+        {activeRound === "round2" && technicalData && (
+          <>
+            {/* Technical Score Card */}
+            <Card className="bg-gradient-to-br from-blue-500/10 to-cyan-600/10 border-blue-500/20 mb-8">
+              <CardContent className="p-8">
+                <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+                  <div className="flex-1 text-center md:text-left">
+                    <h2 className="text-2xl font-bold mb-2">Technical Interview Score</h2>
+                    <p className="text-muted-foreground mb-4">
+                      Code evaluation for: {technicalData.question_title}
+                    </p>
+                    <div className="flex items-center gap-4 justify-center md:justify-start">
+                      <div className={`text-6xl font-bold ${getScoreColor(technicalData.overall_score)}`}>
+                        {Math.round(technicalData.overall_score)}
+                      </div>
+                      <div className="text-left">
+                        <div className="text-2xl font-bold text-muted-foreground">/100</div>
+                        <Badge className={getScoreBgColor(technicalData.overall_score)}>
+                          <Code2 className="h-3 w-3 mr-1" />
+                          {technicalData.overall_score >= 85 ? "Excellent" : technicalData.overall_score >= 70 ? "Good" : "Needs Improvement"}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex-1 w-full">
+                    <div className="grid grid-cols-2 gap-4">
+                      {technicalMetrics.map((metric, index) => {
+                        const score = technicalData.scores[metric.key as keyof typeof technicalData.scores];
+                        return (
+                          <div key={index} className="bg-background/50 rounded-lg p-4">
+                            <div className="flex items-center gap-2 mb-2">
+                              <metric.icon className="h-4 w-4 text-blue-500" />
+                              <span className="text-sm font-medium">{metric.label}</span>
+                            </div>
+                            {score !== undefined && (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-2xl font-bold ${getScoreColor(score)}`}>
+                                    {Math.round(score)}
+                                  </span>
+                                </div>
+                                <Progress value={score} className="h-1.5 mt-2" />
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Complexity Analysis */}
+            <div className="grid md:grid-cols-2 gap-6 mb-8">
+              <Card className="bg-card/50 border-border/40">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="h-5 w-5 text-blue-500" />
+                    Time Complexity
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-mono font-bold text-blue-500">
+                    {technicalData.time_complexity}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="bg-card/50 border-border/40">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-cyan-500" />
+                    Space Complexity
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-mono font-bold text-cyan-500">
+                    {technicalData.space_complexity}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Code & Feedback Section */}
+            <div className="grid lg:grid-cols-2 gap-8">
+              {/* Your Code */}
+              <Card className="bg-card/50 border-border/40">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Code2 className="h-5 w-5 text-primary" />
+                    Your Solution
+                  </CardTitle>
+                  <CardDescription>
+                    Language: {technicalData.language}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="bg-zinc-950 rounded-lg p-4 overflow-x-auto">
+                    <pre className="text-sm text-zinc-100 font-mono whitespace-pre-wrap">
+                      {technicalData.code}
+                    </pre>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Feedback */}
+              <div className="space-y-6">
+                {/* Strengths */}
+                {technicalData.strengths?.length > 0 && (
+                  <Card className="bg-card/50 border-border/40">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <CheckCircle2 className="h-5 w-5 text-green-500" />
+                        Strengths
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {technicalData.strengths.map((strength, idx) => (
+                        <div key={idx} className="flex items-start gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                          <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                          <p className="text-sm">{strength}</p>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Areas for Improvement */}
+                {technicalData.improvements?.length > 0 && (
+                  <Card className="bg-card/50 border-border/40">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <AlertCircle className="h-5 w-5 text-yellow-500" />
+                        Areas for Improvement
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {technicalData.improvements.map((improvement, idx) => (
+                        <div key={idx} className="flex items-start gap-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                          <AlertCircle className="h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0" />
+                          <p className="text-sm">{improvement}</p>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* AI Feedback Summary */}
+                {technicalData.feedback && (
+                  <Card className="bg-gradient-to-br from-blue-500/5 to-cyan-600/5 border-blue-500/20">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Sparkles className="h-5 w-5 text-blue-500" />
+                        AI Feedback Summary
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm leading-relaxed text-muted-foreground">
+                        {technicalData.feedback}
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Round 2 - No Data State */}
+        {activeRound === "round2" && !technicalData && (
+          <Card className="bg-card/50 border-border/40">
+            <CardContent className="p-12 text-center">
+              <Code2 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-xl font-semibold mb-2">No Technical Interview Data</h3>
+              <p className="text-muted-foreground">Round 2 results are not available for this session.</p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Action Buttons */}
         <div className="mt-12 flex flex-col sm:flex-row gap-4 justify-center">

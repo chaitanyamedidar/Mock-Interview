@@ -11,12 +11,13 @@ from sqlalchemy.orm import Session
 
 # Import custom modules
 from .database import get_db, SessionLocal, init_database
-from .models import InterviewSession, SessionResponse, InterviewQuestion, InterviewReport
+from .models import InterviewSession, SessionResponse, InterviewQuestion, InterviewReport, TechnicalSubmission
 from .vapi_service import VAPIManager
 from .vapi_interview_service import VAPIInterviewAnalyzer
 from .resume_service import ATSResumeAnalyzer
 from .file_parser import FileParser
 from .question_service import get_question_service
+from .gcp_gemini_service import GCPGeminiService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -75,6 +76,24 @@ class FeedbackResponse(BaseModel):
     improvements: List[str]
     detailed_analysis: Dict[str, Any]
     question_breakdown: List[Dict[str, Any]]
+
+class TechnicalSubmissionRequest(BaseModel):
+    session_id: str
+    code: str
+    language: str
+    question_title: str
+    question_description: Optional[str] = None
+
+class TechnicalSubmissionResponse(BaseModel):
+    success: bool
+    session_id: str
+    overall_score: float
+    scores: Dict[str, float]
+    time_complexity: str
+    space_complexity: str
+    strengths: List[str]
+    improvements: List[str]
+    feedback: str
 
 class QuestionResponse(BaseModel):
     questions: List[Dict[str, Any]]
@@ -591,6 +610,100 @@ async def get_interview_results(session_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error fetching interview results: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch results")
+
+
+# Technical Interview Submission Endpoint
+@app.post("/api/v1/technical/submit", response_model=TechnicalSubmissionResponse)
+async def submit_technical_solution(request: TechnicalSubmissionRequest, db: Session = Depends(get_db)):
+    """
+    Submit code solution for technical interview round.
+    Evaluates code using Gemini LLM and stores results.
+    """
+    try:
+        logger.info(f"Received technical submission for session {request.session_id}")
+        
+        # Initialize Gemini service for code evaluation
+        gemini_service = GCPGeminiService()
+        
+        # Evaluate code
+        evaluation = await gemini_service.evaluate_code(
+            code=request.code,
+            question=f"{request.question_title}\n\n{request.question_description or ''}",
+            expected_approach=""
+        )
+        
+        # Save to database
+        submission = TechnicalSubmission(
+            session_id=request.session_id,
+            question_title=request.question_title,
+            question_description=request.question_description,
+            code=request.code,
+            language=request.language,
+            scores=evaluation.get('scores', {}),
+            overall_score=evaluation.get('overall_score', 0),
+            time_complexity=evaluation.get('time_complexity', 'Unknown'),
+            space_complexity=evaluation.get('space_complexity', 'Unknown'),
+            strengths=evaluation.get('strengths', []),
+            improvements=evaluation.get('improvements', []),
+            feedback=evaluation.get('feedback', '')
+        )
+        
+        db.add(submission)
+        db.commit()
+        
+        logger.info(f"Technical submission saved for session {request.session_id}, score: {evaluation.get('overall_score')}")
+        
+        return TechnicalSubmissionResponse(
+            success=True,
+            session_id=request.session_id,
+            overall_score=evaluation.get('overall_score', 0),
+            scores=evaluation.get('scores', {}),
+            time_complexity=evaluation.get('time_complexity', 'Unknown'),
+            space_complexity=evaluation.get('space_complexity', 'Unknown'),
+            strengths=evaluation.get('strengths', []),
+            improvements=evaluation.get('improvements', []),
+            feedback=evaluation.get('feedback', '')
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing technical submission: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to evaluate code: {str(e)}")
+
+
+@app.get("/api/v1/technical/results/{session_id}")
+async def get_technical_results(session_id: str, db: Session = Depends(get_db)):
+    """
+    Get technical interview results for a session.
+    """
+    try:
+        submission = db.query(TechnicalSubmission).filter(
+            TechnicalSubmission.session_id == session_id
+        ).first()
+        
+        if not submission:
+            raise HTTPException(status_code=404, detail="Technical submission not found")
+        
+        return {
+            "session_id": submission.session_id,
+            "question_title": submission.question_title,
+            "question_description": submission.question_description,
+            "code": submission.code,
+            "language": submission.language,
+            "overall_score": float(submission.overall_score) if submission.overall_score else 0,
+            "scores": submission.scores or {},
+            "time_complexity": submission.time_complexity,
+            "space_complexity": submission.space_complexity,
+            "strengths": submission.strengths or [],
+            "improvements": submission.improvements or [],
+            "feedback": submission.feedback,
+            "submitted_at": submission.created_at.isoformat() if submission.created_at else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching technical results: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch technical results")
 
 
 # Utility Functions
