@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  apiService, 
-  InterviewQuestion, 
-  InterviewSession, 
+import {
+  apiService,
+  InterviewQuestion,
+  InterviewSession,
   ResponseAnalysis,
   InterviewType,
-  DifficultyLevel 
+  DifficultyLevel
 } from '@/lib/api';
 
 export interface InterviewState {
@@ -56,7 +56,7 @@ export const useInterview = () => {
 
     try {
       const result = await apiService.startInterview(params);
-      
+
       setState(prev => ({
         ...prev,
         session: {
@@ -67,6 +67,8 @@ export const useInterview = () => {
           duration_minutes: params.duration,
           status: result.status,
           started_at: new Date().toISOString(),
+          assistant_id: result.assistant_id,
+          vapi_config: result.vapi_config,
         },
         questions: result.questions,
         isStarted: true,
@@ -74,53 +76,28 @@ export const useInterview = () => {
       }));
 
       return result;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to start interview';
+    } catch (error: any) {
+      console.error('❌ Failed to start interview:', error);
+      let errorMessage = 'Failed to start interview';
+
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        // Defensive: Check if it's a Response object or similar
+        try {
+          errorMessage = JSON.stringify(error);
+        } catch (e) {
+          errorMessage = 'Unknown error object';
+        }
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+
       setError(errorMessage);
       setLoading(false);
       throw error;
     }
   }, []);
-
-  const analyzeResponse = useCallback(async (responseText: string) => {
-    if (!state.session || state.currentQuestionIndex >= state.questions.length) {
-      throw new Error('No active session or invalid question index');
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const currentQuestion = state.questions[state.currentQuestionIndex];
-      
-      const analysis = await apiService.analyzeResponse({
-        session_id: state.session.session_id,
-        question_number: state.currentQuestionIndex + 1,
-        question: currentQuestion.question_text,
-        response: responseText,
-        interview_type: state.session.interview_type,
-      });
-
-      const newResponse = {
-        question: currentQuestion,
-        response_text: responseText,
-        analysis,
-      };
-
-      setState(prev => ({
-        ...prev,
-        responses: [...prev.responses, newResponse],
-        isLoading: false,
-      }));
-
-      return analysis;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to analyze response';
-      setError(errorMessage);
-      setLoading(false);
-      throw error;
-    }
-  }, [state.session, state.currentQuestionIndex, state.questions]);
 
   const nextQuestion = useCallback(() => {
     setState(prev => ({
@@ -129,17 +106,27 @@ export const useInterview = () => {
     }));
   }, []);
 
-  const endInterview = useCallback(async () => {
+  const endInterview = useCallback(async (transcript?: Array<{role: string, message: string, timestamp?: string}>) => {
     if (!state.session) {
-      throw new Error('No active session');
+//       throw new Error('No active session'); // commenting out check to prevent crashing if state lost but sessionId exists in url/parent
+// But wait, state.session is required to get session_id.
+// If state.session is null, we can't end it.
+      console.warn("No active session in state, cannot end interview via hook cleanly.");
+      // return; 
+    }
+    
+    // Safety check for session_id
+    const sessionId = state.session?.session_id;    
+    if (!sessionId) {
+        throw new Error('No active session ID');
     }
 
     setLoading(true);
     setError(null);
 
     try {
-      const feedback = await apiService.endInterview(state.session.session_id);
-      
+      const feedback = await apiService.endInterview(sessionId, transcript);
+
       setState(prev => ({
         ...prev,
         isCompleted: true,
@@ -147,8 +134,22 @@ export const useInterview = () => {
       }));
 
       return feedback;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to end interview';
+    } catch (error: any) {
+      console.error('❌ Failed to end interview:', error);
+      let errorMessage = 'Failed to end interview';
+
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        try {
+          errorMessage = JSON.stringify(error);
+        } catch (e) {
+          errorMessage = 'Unknown error object';
+        }
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+
       setError(errorMessage);
       setLoading(false);
       throw error;
@@ -178,7 +179,6 @@ export const useInterview = () => {
   return {
     ...state,
     startInterview,
-    analyzeResponse,
     nextQuestion,
     endInterview,
     resetInterview,

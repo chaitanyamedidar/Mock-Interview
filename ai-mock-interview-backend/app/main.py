@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Request, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Depends, status, Request, UploadFile, File, Form, BackgroundTasks
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -10,12 +11,13 @@ from sqlalchemy.orm import Session
 
 # Import custom modules
 from .database import get_db, SessionLocal, init_database
-from .models import InterviewSession, SessionResponse, FeedbackDetail, InterviewQuestion
-from .ml_service import InterviewAnalyzer
+from .models import InterviewSession, SessionResponse, InterviewQuestion, InterviewReport, TechnicalSubmission
 from .vapi_service import VAPIManager
+from .vapi_interview_service import VAPIInterviewAnalyzer
 from .resume_service import ATSResumeAnalyzer
 from .file_parser import FileParser
-from .file_parser import FileParser
+from .question_service import get_question_service
+from .gcp_gemini_service import GCPGeminiService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -40,8 +42,8 @@ app.add_middleware(
 )
 
 # Initialize services
-analyzer = InterviewAnalyzer()
 vapi_manager = VAPIManager()
+interview_analyzer = VAPIInterviewAnalyzer()
 resume_analyzer = ATSResumeAnalyzer()
 
 # Pydantic models for request/response validation
@@ -57,25 +59,14 @@ class InterviewStartResponse(BaseModel):
     vapi_config: Dict[str, Any]
     assistant_id: Optional[str] = None
 
-class ResponseAnalysisRequest(BaseModel):
-    session_id: str
-    response_text: str
-    question_id: int
-    question_number: int
-
-class ResponseAnalysisResult(BaseModel):
-    response_id: int
-    quality_score: float
-    content_quality: float
-    communication: float
-    confidence: float
-    technical_accuracy: float
-    rating: str
-    feedback: List[Dict[str, str]]
-    metrics: Dict[str, Any]
+class TranscriptMessage(BaseModel):
+    role: str
+    message: str
+    timestamp: Optional[str] = None
 
 class EndInterviewRequest(BaseModel):
     session_id: str
+    transcript: Optional[List[TranscriptMessage]] = None
 
 class FeedbackResponse(BaseModel):
     session_id: str
@@ -85,6 +76,24 @@ class FeedbackResponse(BaseModel):
     improvements: List[str]
     detailed_analysis: Dict[str, Any]
     question_breakdown: List[Dict[str, Any]]
+
+class TechnicalSubmissionRequest(BaseModel):
+    session_id: str
+    code: str
+    language: str
+    question_title: str
+    question_description: Optional[str] = None
+
+class TechnicalSubmissionResponse(BaseModel):
+    success: bool
+    session_id: str
+    overall_score: float
+    scores: Dict[str, float]
+    time_complexity: str
+    space_complexity: str
+    strengths: List[str]
+    improvements: List[str]
+    feedback: str
 
 class QuestionResponse(BaseModel):
     questions: List[Dict[str, Any]]
@@ -120,7 +129,6 @@ async def health_check():
         "status": "healthy",
         "services": {
             "database": "connected",
-            "ml_model": "loaded" if analyzer.model else "rule_based",
             "vapi": "configured" if vapi_manager.api_key else "not_configured"
         },
         "timestamp": datetime.utcnow().isoformat()
@@ -186,88 +194,13 @@ async def start_interview(request: InterviewStartRequest, db: Session = Depends(
         logger.error(f"Error starting interview: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/interview/analyze-response", response_model=ResponseAnalysisResult)
-async def analyze_response(request: ResponseAnalysisRequest, db: Session = Depends(get_db)):
-    """
-    Analyze a single interview response using ML model
-    """
-    try:
-        # Get question details
-        question = db.query(InterviewQuestion).filter(
-            InterviewQuestion.question_id == request.question_id
-        ).first()
-        
-        if not question:
-            raise HTTPException(status_code=404, detail="Question not found")
-        
-        # Get session details
-        session = db.query(InterviewSession).filter(
-            InterviewSession.session_id == request.session_id
-        ).first()
-        
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-        
-        # Analyze response using ML model
-        analysis = analyzer.analyze_response(
-            response_text=request.response_text,
-            question_text=question.question_text,
-            interview_type=session.interview_type
-        )
-        
-        # Store response in database
-        response_record = SessionResponse(
-            session_id=request.session_id,
-            question_id=request.question_id,
-            question_number=request.question_number,
-            response_text=request.response_text,
-            word_count=analysis['features'].get('word_count', 0),
-            filler_word_count=analysis['features'].get('filler_word_count', 0),
-            technical_term_count=analysis['features'].get('technical_term_count', 0),
-            average_word_length=analysis['features'].get('avg_word_length', 0),
-            content_quality_score=analysis['scores']['content_quality'],
-            communication_score=analysis['scores']['communication'],
-            confidence_score=analysis['scores']['confidence'],
-            technical_accuracy_score=analysis['scores']['technical_accuracy'],
-            overall_response_score=analysis['overall_score'],
-            response_rating=analysis['rating']
-        )
-        db.add(response_record)
-        db.commit()
-        db.refresh(response_record)
-        
-        # Generate and store feedback
-        feedback_suggestions = analyzer.generate_feedback_suggestions(analysis)
-        for feedback_item in feedback_suggestions:
-            feedback = FeedbackDetail(
-                session_id=request.session_id,
-                response_id=response_record.response_id,
-                feedback_type=feedback_item['type'],
-                feedback_text=feedback_item['message']
-            )
-            db.add(feedback)
-        db.commit()
-        
-        return ResponseAnalysisResult(
-            response_id=response_record.response_id,
-            quality_score=analysis['overall_score'],
-            content_quality=analysis['scores']['content_quality'],
-            communication=analysis['scores']['communication'],
-            confidence=analysis['scores']['confidence'],
-            technical_accuracy=analysis['scores']['technical_accuracy'],
-            rating=analysis['rating'],
-            feedback=feedback_suggestions,
-            metrics=analysis['features']
-        )
-        
-    except Exception as e:
-        logger.error(f"Error analyzing response: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/interview/end", response_model=FeedbackResponse)
 async def end_interview(request: EndInterviewRequest, db: Session = Depends(get_db)):
     """
-    End interview session and generate comprehensive feedback
+    End interview session and generate comprehensive feedback.
+    Supports both VAPI webhook-based reports and direct transcript submission.
     """
     try:
         # Get session
@@ -277,14 +210,94 @@ async def end_interview(request: EndInterviewRequest, db: Session = Depends(get_
         
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+
+        # 1. If transcript is provided directly (Frontend fallback), process it immediately
+        if request.transcript:
+            logger.info(f"Processing provided transcript for session {request.session_id}")
+            
+            # Construct mock VAPI payload
+            mock_payload = {
+                "call": {
+                    "id": "manual_submission_" + request.session_id,
+                    "duration": 0, # We might not have duration
+                    "metadata": {
+                        "session_id": request.session_id,
+                        "interview_type": session.interview_type,
+                        "user_id": session.user_id
+                    },
+                    "transcript": {
+                        "messages": [
+                            {
+                                "role": msg.role,
+                                "message": msg.message,
+                                "timestamp": msg.timestamp or datetime.utcnow().isoformat()
+                            }
+                            for msg in request.transcript
+                        ]
+                    }
+                }
+            }
+            
+            # Process using VAPI analyzer
+            try:
+                analysis_result = await interview_analyzer.process_interview_transcript(mock_payload, db)
+                logger.info(f"Analysis completed for session {request.session_id}")
+                
+                # The report is already saved by process_interview_transcript
+                # Now fetch it fresh and return
+                report = db.query(InterviewReport).filter(
+                    InterviewReport.session_id == request.session_id
+                ).first()
+                
+                if report:
+                    # Update session status
+                    session.status = 'completed'
+                    session.completed_at = datetime.utcnow()
+                    session.overall_score = report.overall_score
+                    session.overall_rating = report.performance_label
+                    db.commit()
+                    
+                    return FeedbackResponse(
+                        session_id=request.session_id,
+                        overall_score=float(report.overall_score),
+                        overall_rating=report.performance_label,
+                        strengths=[r['description'] for r in report.recommendations if 'Strength' in r.get('title', '')] or ["Good interview performance"],
+                        improvements=[r['description'] for r in report.recommendations if 'Strength' not in r.get('title', '')],
+                        detailed_analysis=report.category_scores,
+                        question_breakdown=report.transcript if report.transcript else []
+                    )
+                
+            except Exception as e:
+                logger.error(f"Error processing manual transcript: {e}", exc_info=True)
+                # Fallthrough to try fetching existing report/responses
         
+        # 2. Check for existing InterviewReport (from VAPI webhook or just created above)
+        report = db.query(InterviewReport).filter(
+            InterviewReport.session_id == request.session_id
+        ).first()
+        
+        if report:
+             # Map InterviewReport to FeedbackResponse
+             # Note: InterviewReport stores `category_scores` as JSON, `recommendations` as JSON
+             
+             return FeedbackResponse(
+                session_id=request.session_id,
+                overall_score=float(report.overall_score),
+                overall_rating=report.performance_label,
+                strengths=[r['description'] for r in report.recommendations if 'Strength' in r.get('title', '')] or ["Check detailed report"], # Simple extraction
+                improvements=[r['description'] for r in report.recommendations if 'Strength' not in r.get('title', '')],
+                detailed_analysis=report.category_scores, # This was detailed_metrics
+                question_breakdown=report.transcript if report.transcript else [] # Enriched transcript
+             )
+
+        # 3. Fallback: Old SessionResponse logic (Non-VAPI)
         # Get all responses for this session
         responses = db.query(SessionResponse).filter(
             SessionResponse.session_id == request.session_id
         ).order_by(SessionResponse.question_number).all()
         
         if not responses:
-            raise HTTPException(status_code=400, detail="No responses found for this session")
+            raise HTTPException(status_code=400, detail="No responses or report found for this session")
         
         # Calculate overall metrics
         overall_analysis = calculate_overall_feedback(responses, db)
@@ -304,11 +317,6 @@ async def end_interview(request: EndInterviewRequest, db: Session = Depends(get_
                 InterviewQuestion.question_id == response.question_id
             ).first()
             
-            # Get feedback for this response
-            feedback_items = db.query(FeedbackDetail).filter(
-                FeedbackDetail.response_id == response.response_id
-            ).all()
-            
             question_breakdown.append({
                 'question_number': response.question_number,
                 'question_text': question.question_text if question else "Question not found",
@@ -320,8 +328,7 @@ async def end_interview(request: EndInterviewRequest, db: Session = Depends(get_
                     'technical_accuracy': float(response.technical_accuracy_score or 0),
                     'overall': float(response.overall_response_score or 0)
                 },
-                'rating': response.response_rating,
-                'feedback': [{'type': f.feedback_type, 'message': f.feedback_text} for f in feedback_items]
+                'rating': response.response_rating
             })
         
         return FeedbackResponse(
@@ -419,9 +426,24 @@ async def get_session_details(session_id: str, db: Session = Depends(get_db)):
         logger.error(f"Error getting session details: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Background analysis task wrapper
+async def run_analysis_background(webhook_data: Dict[str, Any]):
+    """Run interview analysis in background with fresh DB session"""
+    db = SessionLocal()
+    try:
+        logger.info(f"Starting background analysis for call {webhook_data.get('call', {}).get('id')}")
+        await interview_analyzer.process_interview_transcript(webhook_data, db)
+        logger.info("Background analysis completed successfully")
+    except Exception as e:
+        logger.error(f"Background analysis failed: {e}")
+    finally:
+        db.close()
+
 # VAPI Webhook Endpoints
 @app.post("/api/vapi/webhook")
-async def handle_vapi_webhook(request: Request):
+
+@app.post("/api/vapi/webhook")
+async def handle_vapi_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Handle VAPI webhook events
     """
@@ -440,11 +462,249 @@ async def handle_vapi_webhook(request: Request):
         # Handle the webhook
         result = vapi_manager.handle_webhook(webhook_data)
         
+        # Check if analysis should be triggered
+        if result.get('status') == 'call_ended':
+            # Run analysis in background
+            background_tasks.add_task(run_analysis_background, webhook_data)
+            logger.info("Queued background analysis for call")
+        
         return result
         
     except Exception as e:
         logger.error(f"Error handling VAPI webhook: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/vapi/interview-complete")
+async def handle_interview_complete(request: Request, db: Session = Depends(get_db)):
+    """
+    Handle VAPI interview completion webhook.
+    Receives transcript, analyzes with hybrid rule-based + LLM approach,
+    returns structured feedback matching frontend schema.
+    """
+    try:
+        # Get raw payload for signature validation
+        payload = await request.body()
+        signature = request.headers.get('x-vapi-signature', '')
+        
+        # Validate webhook signature
+        if not vapi_manager.validate_webhook_signature(payload.decode(), signature):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+        
+        # Parse JSON payload
+        webhook_data = await request.json()
+        
+        # Handle implicit 'message' wrapper from VAPI
+        if 'message' in webhook_data:
+            webhook_data = webhook_data['message']
+
+        # Log the message type for debugging
+        message_type = webhook_data.get('type')
+        logger.info(f"Received VAPI webhook event type: {message_type}")
+
+        # If this is not an end-of-call-report or doesn't have a transcript, we might want to ignore it 
+        # to prevent 400 errors on call setup/status events (call-start, etc.)
+        if message_type in ['call-start', 'status-update', 'speech-update', 'function-call']:
+            return {"status": "ignored", "reason": f"Event {message_type} handled elsewhere or ignored"}
+
+        # Validate payload structure
+        call_data = webhook_data.get('call', {})
+        if not call_data:
+            logger.error("Missing 'call' data in payload")
+            raise HTTPException(status_code=400, detail="Missing 'call' data in payload")
+        
+        transcript_data = call_data.get('transcript', {})
+        messages = transcript_data.get('messages', [])
+        
+        if not messages:
+            logger.error("No transcript data found in payload")
+            raise HTTPException(status_code=400, detail="No transcript data found")
+        
+        metadata = call_data.get('metadata', {})
+        session_id = metadata.get('session_id')
+        
+        if not session_id:
+            logger.error("Missing session_id in metadata")
+            raise HTTPException(status_code=400, detail="Missing session_id in metadata")
+        
+        # Process interview transcript
+        logger.info(f"Processing interview completion for session {session_id}")
+        
+        try:
+            analysis_result = await interview_analyzer.process_interview_transcript(
+                vapi_payload=webhook_data,
+                db=db
+            )
+            
+            logger.info(f"Successfully analyzed interview for session {session_id}")
+            return analysis_result
+        
+        except ValueError as e:
+            # Validation errors (e.g., no questions found)
+            logger.error(f"Validation error processing interview: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        except Exception as e:
+            # Unexpected errors during processing
+            logger.error(f"Error processing interview transcript: {e}")
+            raise HTTPException(
+                status_code=500, 
+                detail="Failed to process interview. Please try again."
+            )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error handling interview complete webhook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/interview/results/{session_id}")
+async def get_interview_results(session_id: str, db: Session = Depends(get_db)):
+    """
+    Poll for interview results by session_id.
+    Returns 202 if still processing, 200 with data if ready, 404 if not found.
+    """
+    try:
+        # Query for the interview report
+        report = db.query(InterviewReport).filter(
+            InterviewReport.session_id == session_id
+        ).first()
+        
+        if not report:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Interview session '{session_id}' not found"
+            )
+        
+        # Check if analysis is complete
+        if not report.category_scores or not report.recommendations:
+            # Still processing
+            return JSONResponse(
+                status_code=202,
+                content={
+                    "message": "Analysis in progress",
+                    "session_id": session_id,
+                    "status": "processing"
+                }
+            )
+        
+        # Results ready - return complete analysis
+        return {
+            "report_summary": {
+                "overall_score": float(report.overall_score),
+                "performance_label": report.performance_label,
+                "total_questions_analyzed": report.total_questions_analyzed,
+                "categories": report.category_scores
+            },
+            "ai_recommendations": report.recommendations,
+            "questions_breakdown": report.transcript, # This now contains the analyzed Q&A
+            "metadata": {
+                "session_id": report.session_id,
+                "analysis_timestamp": report.created_at.isoformat() if report.created_at else None,
+                "call_duration": report.call_duration_seconds
+            }
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching interview results: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch results")
+
+
+# Technical Interview Submission Endpoint
+@app.post("/api/v1/technical/submit", response_model=TechnicalSubmissionResponse)
+async def submit_technical_solution(request: TechnicalSubmissionRequest, db: Session = Depends(get_db)):
+    """
+    Submit code solution for technical interview round.
+    Evaluates code using Gemini LLM and stores results.
+    """
+    try:
+        logger.info(f"Received technical submission for session {request.session_id}")
+        
+        # Initialize Gemini service for code evaluation
+        gemini_service = GCPGeminiService()
+        
+        # Evaluate code
+        evaluation = await gemini_service.evaluate_code(
+            code=request.code,
+            question=f"{request.question_title}\n\n{request.question_description or ''}",
+            expected_approach=""
+        )
+        
+        # Save to database
+        submission = TechnicalSubmission(
+            session_id=request.session_id,
+            question_title=request.question_title,
+            question_description=request.question_description,
+            code=request.code,
+            language=request.language,
+            scores=evaluation.get('scores', {}),
+            overall_score=evaluation.get('overall_score', 0),
+            time_complexity=evaluation.get('time_complexity', 'Unknown'),
+            space_complexity=evaluation.get('space_complexity', 'Unknown'),
+            strengths=evaluation.get('strengths', []),
+            improvements=evaluation.get('improvements', []),
+            feedback=evaluation.get('feedback', '')
+        )
+        
+        db.add(submission)
+        db.commit()
+        
+        logger.info(f"Technical submission saved for session {request.session_id}, score: {evaluation.get('overall_score')}")
+        
+        return TechnicalSubmissionResponse(
+            success=True,
+            session_id=request.session_id,
+            overall_score=evaluation.get('overall_score', 0),
+            scores=evaluation.get('scores', {}),
+            time_complexity=evaluation.get('time_complexity', 'Unknown'),
+            space_complexity=evaluation.get('space_complexity', 'Unknown'),
+            strengths=evaluation.get('strengths', []),
+            improvements=evaluation.get('improvements', []),
+            feedback=evaluation.get('feedback', '')
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing technical submission: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to evaluate code: {str(e)}")
+
+
+@app.get("/api/v1/technical/results/{session_id}")
+async def get_technical_results(session_id: str, db: Session = Depends(get_db)):
+    """
+    Get technical interview results for a session.
+    """
+    try:
+        submission = db.query(TechnicalSubmission).filter(
+            TechnicalSubmission.session_id == session_id
+        ).first()
+        
+        if not submission:
+            raise HTTPException(status_code=404, detail="Technical submission not found")
+        
+        return {
+            "session_id": submission.session_id,
+            "question_title": submission.question_title,
+            "question_description": submission.question_description,
+            "code": submission.code,
+            "language": submission.language,
+            "overall_score": float(submission.overall_score) if submission.overall_score else 0,
+            "scores": submission.scores or {},
+            "time_complexity": submission.time_complexity,
+            "space_complexity": submission.space_complexity,
+            "strengths": submission.strengths or [],
+            "improvements": submission.improvements or [],
+            "feedback": submission.feedback,
+            "submitted_at": submission.created_at.isoformat() if submission.created_at else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching technical results: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch technical results")
+
 
 # Utility Functions
 def get_questions_for_interview(
@@ -640,7 +900,7 @@ async def analyze_resume(
             )
         
         # Analyze the resume using the LLM service
-        analysis = resume_analyzer.analyze_resume(
+        analysis = await resume_analyzer.analyze_resume(
             resume_text=resume_text,
             job_description=job_description or '',
             target_role=target_role or ''
@@ -657,6 +917,141 @@ async def analyze_resume(
 
 # R
 # Run the application
+
+
+# ============================================================================
+# CODING QUESTION ENDPOINTS
+# ============================================================================
+
+@app.get("/api/v1/questions/stats")
+async def get_question_stats():
+    """Get statistics about the question database."""
+    try:
+        service = get_question_service()
+        return service.get_statistics()
+    except Exception as e:
+        logger.error(f"Error getting question stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/questions/random")
+async def get_random_question(
+    company: Optional[str] = None,
+    difficulty: Optional[str] = None,
+    topic: Optional[str] = None
+):
+    """
+    Get a random question matching the specified filters.
+    
+    Query Parameters:
+        company: Filter by company (e.g., "JP Morgan", "Capgemini", "Deloitte")
+        difficulty: Filter by difficulty ("Easy", "Medium", "Hard")
+        topic: Filter by topic (e.g., "Array", "Hash Table", "Dynamic Programming")
+    """
+    try:
+        service = get_question_service()
+        question = service.get_random_question(company=company, difficulty=difficulty, topic=topic)
+        
+        if not question:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No questions found matching filters: company={company}, difficulty={difficulty}, topic={topic}"
+            )
+        
+        return question
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting random question: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/questions/{question_id}")
+async def get_question_by_id(question_id: str):
+    """Get a specific question by its ID."""
+    try:
+        service = get_question_service()
+        question = service.get_question_by_id(question_id)
+        
+        if not question:
+            raise HTTPException(status_code=404, detail=f"Question not found: {question_id}")
+        
+        return question
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting question by ID: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/questions/company/{company}")
+async def get_questions_by_company(company: str):
+    """Get all questions for a specific company."""
+    try:
+        service = get_question_service()
+        questions = service.get_questions_by_company(company)
+        
+        return {
+            "company": company,
+            "count": len(questions),
+            "questions": questions
+        }
+    except Exception as e:
+        logger.error(f"Error getting questions by company: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/questions/difficulty/{difficulty}")
+async def get_questions_by_difficulty(difficulty: str):
+    """Get all questions of a specific difficulty level."""
+    try:
+        service = get_question_service()
+        questions = service.get_questions_by_difficulty(difficulty)
+        
+        return {
+            "difficulty": difficulty,
+            "count": len(questions),
+            "questions": questions
+        }
+    except Exception as e:
+        logger.error(f"Error getting questions by difficulty: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/questions/topic/{topic}")
+async def get_questions_by_topic(topic: str):
+    """Get all questions for a specific topic."""
+    try:
+        service = get_question_service()
+        questions = service.get_questions_by_topic(topic)
+        
+        return {
+            "topic": topic,
+            "count": len(questions),
+            "questions": questions
+        }
+    except Exception as e:
+        logger.error(f"Error getting questions by topic: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/questions/search")
+async def search_questions(q: str, limit: int = 10):
+    """
+    Search questions by title or description.
+    
+    Query Parameters:
+        q: Search query string
+        limit: Maximum number of results (default: 10)
+    """
+    try:
+        service = get_question_service()
+        questions = service.search_questions(query=q, limit=limit)
+        
+        return {
+            "query": q,
+            "count": len(questions),
+            "questions": questions
+        }
+    except Exception as e:
+        logger.error(f"Error searching questions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(

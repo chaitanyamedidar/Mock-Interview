@@ -4,6 +4,7 @@ import logging
 from typing import Dict, Any, List
 from openai import OpenAI
 from dotenv import load_dotenv
+from .gcp_gemini_service import GCPGeminiService
 
 load_dotenv()
 
@@ -17,26 +18,41 @@ class ATSResumeAnalyzer:
     def __init__(self):
         """
         Initialize the LLM client for resume analysis.
+        Primary: GCP Gemini, Fallback: OpenRouter
         """
+        # Try to initialize GCP Gemini (primary)
+        self.use_gemini = False
+        try:
+            self.gemini_service = GCPGeminiService()
+            self.use_gemini = True
+            logger.info("GCP Gemini service initialized successfully")
+        except Exception as e:
+            logger.warning(f"GCP Gemini unavailable: {e}. Will use OpenRouter fallback.")
+        
+        # Initialize OpenRouter (fallback)
         self.api_key = os.getenv("LLM_API_KEY")
         self.base_url = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1")
         self.model = os.getenv("LLM_MODEL", "google/gemini-2.0-flash-exp:free")
 
-        if not self.api_key:
-            logger.warning("LLM_API_KEY not found. Resume analysis will fail.")
-
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url,
-            default_headers={
-                "HTTP-Referer": "http://localhost:3000",
-                "X-Title": "AI Mock Interview Platform"
-            }
-        )
+        if not self.api_key and not self.use_gemini:
+            logger.error("Neither GOOGLE_AI_API_KEY nor LLM_API_KEY found. Resume analysis will fail.")
+        
+        if self.api_key:
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                default_headers={
+                    "HTTP-Referer": "http://localhost:3000",
+                    "X-Title": "AI Mock Interview Platform"
+                }
+            )
+        else:
+            self.client = None
     
-    def analyze_resume(self, resume_text: str, job_description: str = '', target_role: str = '') -> Dict[str, Any]:
+    async def analyze_resume(self, resume_text: str, job_description: str = '', target_role: str = '') -> Dict[str, Any]:
         """
         Analyze a resume for ATS compatibility and provide actionable feedback.
+        Uses GCP Gemini as primary, falls back to OpenRouter on failure.
         
         Args:
             resume_text: The full text of the resume
@@ -48,8 +64,27 @@ class ATSResumeAnalyzer:
         """
         if not resume_text or not resume_text.strip():
             return self._get_empty_response()
-
+        
+        # Use GCP Gemini only (no fallback)
         try:
+            logger.info("Using GCP Gemini for resume analysis")
+            gemini_result = await self.gemini_service.analyze_resume(resume_text, job_description)
+            # Transform GCP Gemini schema to match expected response
+            return self._transform_gemini_response(gemini_result)
+        except Exception as e:
+            logger.error(f"GCP Gemini analysis failed: {e}")
+            return self._get_error_response("Resume analysis service is temporarily unavailable. Please try again later.")
+
+    def _analyze_with_openrouter(self, resume_text: str, job_description: str, target_role: str) -> Dict[str, Any]:
+        """
+        Analyze resume using OpenRouter (fallback method).
+        """
+        if not self.client:
+            logger.error("OpenRouter client not initialized. Cannot perform analysis.")
+            return self._get_error_response("LLM service unavailable")
+        
+        try:
+            logger.info("Using OpenRouter for resume analysis")
             prompt = self._create_resume_analysis_prompt(resume_text, job_description, target_role)
             
             completion = self.client.chat.completions.create(
@@ -356,6 +391,62 @@ Follow the ATS SCORING PARAMETERS defined in the system prompt and output valid 
             "score_breakdown": score_breakdown,  # Pass through for reference
             "improvement_scope": improvement_scope  # Pass through for reference
         }
+    
+    def _transform_gemini_response(self, gemini_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform GCP Gemini response schema to match ResumeAnalysisResponse."""
+        ats_score = gemini_result.get('ats_score', 50)
+        
+        # Determine rating
+        if ats_score >= 90:
+            rating = "Excellent"
+        elif ats_score >= 80:
+            rating = "Strong"
+        elif ats_score >= 70:
+            rating = "Good"
+        elif ats_score >= 60:
+            rating = "Average"
+        else:
+            rating = "Needs Improvement"
+        
+        # Map scores to category_scores (match frontend schema)
+        scores = gemini_result.get('scores', {})
+        category_scores = {
+            'formatting': scores.get('format_quality', 70),
+            'keywords': scores.get('keyword_match', 60),
+            'structure': scores.get('overall_presentation', 50),
+            'impact': scores.get('achievements_quantified', 73),
+            'readability': scores.get('experience_relevance', 50)
+        }
+        
+        # Transform improvements to critical_issues
+        improvements = gemini_result.get('improvements', [])
+        critical_issues = [
+            {'issue': imp, 'severity': 'medium', 'suggestion': imp}
+            for imp in improvements[:3]
+        ]
+        
+        # Create keyword analysis
+        missing_keywords = gemini_result.get('missing_keywords', [])
+        keyword_analysis = {
+            'found_keywords': [],  # Gemini doesn't provide this, but frontend expects it
+            'missing_keywords': missing_keywords,
+            'keyword_density': 'moderate' if ats_score >= 70 else 'low',
+            'suggestions': [f"Add keyword: {kw}" for kw in missing_keywords[:3]]
+        }
+        
+        return {
+            'overall_score': int(ats_score),
+            'ats_score': int(ats_score),
+            'rating': rating,
+            'category_scores': category_scores,
+            'key_strengths': gemini_result.get('strengths', [])[:3],
+            'critical_issues': critical_issues,
+            'missing_sections': [],
+            'keyword_analysis': keyword_analysis,
+            'formatting_issues': [],
+            'recommendations': gemini_result.get('improvements', [])[:5],
+            'summary': gemini_result.get('summary', 'Resume analysis completed.')
+        }
 
     def _get_empty_response(self) -> Dict[str, Any]:
         return {
@@ -380,6 +471,32 @@ Follow the ATS SCORING PARAMETERS defined in the system prompt and output valid 
             "formatting_issues": [],
             "recommendations": ["Please provide a valid resume to analyze."],
             "summary": "No resume provided."
+        }
+    
+    def _get_error_response(self, error_message: str) -> Dict[str, Any]:
+        """Return error response when analysis fails."""
+        return {
+            "overall_score": 0,
+            "ats_score": 0,
+            "rating": "Error",
+            "category_scores": {
+                "formatting": 0,
+                "keywords": 0,
+                "structure": 0,
+                "impact": 0,
+                "readability": 0
+            },
+            "key_strengths": [],
+            "critical_issues": [],
+            "missing_sections": [],
+            "keyword_analysis": {
+                "found_keywords": [],
+                "missing_keywords": [],
+                "keyword_density": "unknown"
+            },
+            "formatting_issues": [],
+            "recommendations": [error_message],
+            "summary": error_message
         }
 
     def _get_fallback_response(self) -> Dict[str, Any]:

@@ -109,50 +109,55 @@ class VAPIManager:
     
     def _generate_system_prompt(self, interview_type: str, questions: List[str]) -> str:
         """
-        Generate system prompt based on interview type and questions
+        Generate system prompt based on interview type and questions.
+        Note: If using VAPI dashboard's custom system prompt with {questions_list} placeholder,
+        this method formats the questions to match that template.
         """
-        base_prompt = f"""You are a professional interviewer conducting a {interview_type.replace('_', ' ')} mock interview. Your role is to create a supportive yet professional interview environment.
+        # Format questions as numbered list for the {questions_list} placeholder
+        questions_formatted = chr(10).join(f'{i+1}. {q}' for i, q in enumerate(questions))
+        
+        # You can use the VAPI dashboard's custom system prompt by replacing {questions_list}
+        # Or use this programmatic prompt as a fallback/alternative
+        base_prompt = f"""You are an experienced technical interviewer conducting mock interviews.
 
-INSTRUCTIONS:
-1. Ask questions one at a time from the provided list in order
-2. Wait for complete answers before moving to the next question
-3. Provide brief, encouraging acknowledgments between questions ("Thank you", "I see", "Interesting point")
-4. If an answer is unclear or too brief, ask ONE follow-up question for clarification
-5. Do NOT provide correct answers or extensive feedback during the interview
-6. Keep the conversation flowing naturally and professionally
-7. After each response, call the analyze_response function to process the answer
-8. After all questions are completed, call the end_interview function
+Your role:
+- Ask interview questions one by one
+- Wait for complete responses before moving to the next question
+- Provide brief encouraging feedback after each answer
+- Maintain a professional yet friendly tone
+- Help candidates practice effectively
 
-QUESTIONS TO ASK (in order):
-{chr(10).join(f'{i+1}. {q}' for i, q in enumerate(questions))}
+Interview style:
+- Be patient and give candidates time to think
+- Ask clarifying follow-up questions when appropriate
+- Don't interrupt while the candidate is speaking
+- Provide constructive feedback naturally
 
-CONVERSATION FLOW:
-- Start with a warm greeting and brief explanation
-- Ask Question 1 and wait for response
-- Give brief acknowledgment and ask Question 2
-- Continue until all questions are asked
-- Thank the candidate and end professionally
+Begin the interview by:
+1. Greeting the candidate warmly
+2. Explaining the interview format (5-7 questions, 20 to 30 minutes)
+3. Asking if they're ready to begin
+4. Starting with the first question
 
-TONE: Professional, encouraging, and supportive. Make the candidate feel comfortable while maintaining interview standards."""
+Ask questions in this order:
+{questions_formatted}"""
 
         # Add specific guidance based on interview type
         if 'technical' in interview_type:
             base_prompt += """
 
-TECHNICAL INTERVIEW GUIDANCE:
+Additional guidance for technical interviews:
 - Listen for technical terminology, algorithms, and system design concepts
 - If a candidate mentions code, ask them to explain their thinking process
-- For system design questions, encourage them to think about scalability and trade-offs
-- Don't correct technical mistakes during the interview"""
+- For system design questions, encourage discussion about scalability and trade-offs"""
         
         elif 'behavioral' in interview_type:
             base_prompt += """
 
-BEHAVIORAL INTERVIEW GUIDANCE:
+Additional guidance for behavioral interviews:
 - Listen for specific examples following the STAR method (Situation, Task, Action, Result)
 - If answers are too vague, ask for more specific details about their role and actions
-- Encourage quantifiable results where applicable
-- Look for leadership, problem-solving, and teamwork examples"""
+- Encourage quantifiable results where applicable"""
         
         return base_prompt
     

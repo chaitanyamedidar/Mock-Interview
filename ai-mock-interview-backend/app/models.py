@@ -72,25 +72,62 @@ class SessionResponse(Base):
     overall_response_score = Column(DECIMAL(4, 2), nullable=True)
     response_rating = Column(String(20), nullable=True)
 
-class FeedbackDetail(Base):
-    """Detailed feedback for responses"""
-    __tablename__ = 'feedback_details'
-    
-    feedback_id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String(36), nullable=False)
-    response_id = Column(Integer, nullable=True)
-    feedback_type = Column(String(50), nullable=False)
-    feedback_text = Column(Text, nullable=False)
-    created_at = Column(TIMESTAMP, server_default=func.now())
-
-class MLTrainingData(Base):
-    """Store data for continuous ML model improvement"""
-    __tablename__ = 'ml_training_data'
+class InterviewReport(Base):
+    """Interview analysis report from VAPI webhook"""
+    __tablename__ = 'interview_reports'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    question_text = Column(Text, nullable=False)
-    response_text = Column(Text, nullable=False)
-    manual_label = Column(String(20), nullable=True)
-    features = Column(JSON, nullable=True)
+    session_id = Column(String(36), nullable=False, index=True)
+    user_id = Column(Integer, nullable=True, index=True)
+    call_id = Column(String(100), nullable=True)
+    
+    # Overall scores
+    overall_score = Column(DECIMAL(5, 2), nullable=False)
+    performance_label = Column(String(50), nullable=False)
+    total_questions_analyzed = Column(Integer, nullable=False)
+    
+    # Category scores and trends (stored as JSON)
+    category_scores = Column(JSON, nullable=False)
+    
+    # AI recommendations (stored as JSON array)
+    recommendations = Column(JSON, nullable=False)
+    
+    # Complete transcript for audit and re-analysis (stored as JSON)
+    transcript = Column(JSON, nullable=True)
+    
+    # Metadata
+    processing_time_ms = Column(Integer, nullable=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
-    is_validated = Column(Boolean, default=False)
+    
+    # Call metadata
+    call_duration_seconds = Column(Integer, nullable=True)
+
+
+class TechnicalSubmission(Base):
+    """Technical interview code submission and evaluation"""
+    __tablename__ = 'technical_submissions'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(36), nullable=False, index=True)
+    
+    # Question details
+    question_title = Column(String(255), nullable=False)
+    question_description = Column(Text, nullable=True)
+    
+    # Submission details
+    code = Column(Text, nullable=False)
+    language = Column(String(50), nullable=False)
+    
+    # Evaluation scores (stored as JSON)
+    scores = Column(JSON, nullable=True)  # {correctness, code_quality, efficiency, best_practices}
+    overall_score = Column(DECIMAL(5, 2), nullable=True)
+    
+    # Analysis results
+    time_complexity = Column(String(50), nullable=True)
+    space_complexity = Column(String(50), nullable=True)
+    strengths = Column(JSON, nullable=True)  # List of strings
+    improvements = Column(JSON, nullable=True)  # List of strings
+    feedback = Column(Text, nullable=True)
+    
+    # Metadata
+    created_at = Column(TIMESTAMP, server_default=func.now())

@@ -18,21 +18,29 @@ A full-stack AI-powered mock interview platform featuring voice integration, rea
 ## 🌟 Overview
 
 This platform provides an immersive mock interview experience with:
-- **Voice-enabled interviews** using VAPI integration
-- **LLM-powered feedback** using Google Gemini via OpenRouter
+- **Two-Round Interview Structure**: Round 1 (Behavioral - Voice) + Round 2 (Technical - Coding)
+- **Voice-enabled behavioral interviews** using VAPI integration
+- **Technical coding challenges** with integrated Monaco code editor
+- **LLM-powered feedback** using Google Gemini 2.5 Flash (direct API integration)
 - **ATS Resume Analyzer** with 6-parameter scoring system and file upload support (PDF/DOCX/TXT)
 - **Multiple interview types**: Technical (Software, Data Science), Behavioral, and Company-specific
 - **Real-time transcript** with clear speaker differentiation (User vs Interviewer)
-- **Comprehensive reporting** with strengths, improvements, and detailed metrics
+- **Comprehensive reporting** with segregated Round 1/Round 2 performance metrics
 
 ## ✨ Features
+
+### Interview Flow
+- 🎯 **Round 1 - Behavioral Interview**: Voice-powered interview with VAPI AI
+- 💻 **Round 2 - Technical Interview**: Coding challenges with Monaco code editor
+- 📊 **Segregated Performance Reports**: Separate feedback for each round with tabbed interface
 
 ### Frontend (Next.js)
 - 🎨 Modern, responsive UI with Tailwind CSS
 - 🎙️ Voice interview interface with VAPI integration
-- � **Resume Analyzer** with file upload (PDF, DOCX, TXT)
-- 💬 Structured real-time transcript with speaker differentiation
-- 📊 Real-time performance dashboard
+- 💻 **Monaco Code Editor** for technical round with syntax highlighting
+- 📝 **Resume Analyzer** with file upload (PDF, DOCX, TXT)
+- 💬 Structured real-time transcript with speaker differentiation (no duplicate words)
+- 📊 Real-time performance dashboard with Round 1/Round 2 tabs
 - 📈 Interactive charts and visualizations
 - 🎯 Multiple interview types and difficulty levels
 - 📱 Mobile-responsive design
@@ -40,12 +48,13 @@ This platform provides an immersive mock interview experience with:
 
 ### Backend (FastAPI)
 - 🚀 High-performance RESTful API
-- 🤖 **LLM-powered analysis** using Google Gemini 2.0 Flash via OpenRouter
+- 🤖 **LLM-powered analysis** using Google Gemini 2.5 Flash (direct SDK integration)
+- 💻 **Technical Code Evaluation**: Time/space complexity, correctness, best practices scoring
 - 📄 **ATS Resume Analysis** with authoritative 6-parameter scoring system
 - 📁 **File parsing** for PDF (PyPDF2), DOCX (python-docx), and TXT files
 - 📝 Comprehensive question database (50+ questions)
 - 🔊 VAPI webhook integration for voice processing
-- 💾 SQLite database (lightweight, no PostgreSQL required)
+- 💾 SQLite database with session management
 - 📊 Advanced analytics and metrics
 - 🔐 Secure API endpoints
 - 📖 Automatic API documentation (Swagger/ReDoc)
@@ -57,16 +66,20 @@ This platform provides an immersive mock interview experience with:
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
 - **UI Components**: Radix UI, shadcn/ui
+- **Code Editor**: Monaco Editor (VS Code engine)
 - **State Management**: React Hooks
-- **Voice Integration**: VAPI SDK
+- **Voice Integration**: VAPI SDK (@vapi-ai/web)
 - **Animations**: Framer Motion, React Three Fiber
 - **Charts**: Recharts
-- **Icons**: Tabler Icons13+
+- **Icons**: Tabler Icons
+
+### Backend
+- **Framework**: FastAPI
+- **Language**: Python 3.13+
 - **Database**: SQLite (SQLAlchemy ORM)
-- **LLM Provider**: OpenRouter (Google Gemini 2.0 Flash Experimental)
-- **LLM Client**: OpenAI SDK
+- **LLM Provider**: Google Gemini 2.5 Flash (direct SDK via google.generativeai)
 - **File Processing**: PyPDF2, python-docx
-- **API**: Requests
+- **Voice Processing**: VAPI webhooks
 - **Configuration**: python-dotenv, pydantic
 - **ML Framework**: scikit-learn
 - **NLP**: NLTK
@@ -81,6 +94,10 @@ Mock Interview/
 ├── ai-mock-interview-frontend/     # Next.js frontend application
 │   ├── src/
 │   │   ├── app/                    # Next.js app router pages
+│   │   │   ├── interview/          # Round 1 - Behavioral voice interview
+│   │   │   ├── technical/          # Round 2 - Technical coding interview
+│   │   │   ├── feedback/           # Performance reports (Round 1 & 2 tabs)
+│   │   │   └── api/                # Next.js API routes
 │   │   ├── components/             # Reusable React components
 │   │   ├── hooks/                  # Custom React hooks
 │   │   ├── lib/                    # Utility functions and configurations
@@ -92,10 +109,11 @@ Mock Interview/
 ├── ai-mock-interview-backend/      # FastAPI backend application
 │   ├── app/
 │   │   ├── main.py                 # FastAPI application entry point
-│   │   ├── models.py               # SQLAlchemy database models
+│   │   ├── models.py               # SQLAlchemy models (InterviewSession, TechnicalSubmission)
 │   │   ├── database.py             # Database configuration
 │   │   ├── vapi_service.py         # VAPI integration service
-│   │   ├── ml_service.py           # LLM interview analysis service
+│   │   ├── vapi_interview_service.py # Interview analyzer with Gemini
+│   │   ├── gcp_gemini_service.py   # Google Gemini direct SDK service
 │   │   ├── resume_service.py       # LLM resume analysis service
 │   │   └── file_parser.py          # PDF/DOCX/TXT file parsing utility
 │   ├── data/
@@ -117,13 +135,13 @@ Mock Interview/
 
 - **Node.js** 18+ and npm/bun
 - **Python** 3.8+
-- **VAPI Account** and API key ([Get it here](https://vapi.ai))
+- **Google Cloud Account** with Gemini API key ([Get it here](https://aistudio.google.com/apikey))
+- **VAPI Account** and API key ([Get it here](https://vapi.ai)) - For voice features
+- **ngrok** (optional) - For VAPI webhooks in development
 
 ### Quick Start
 
-#### 1. Clone &13+
-- **OpenRouter Account** and API key ([Get it here](https://openrouter.ai))
-- **VAPI Account** and API key ([Get it here](https://vapi.ai)) - Optional for voice features
+#### 1. Clone the Repository
 ```bash
 git clone <repository-url>
 cd "Mock Interview"
@@ -137,12 +155,12 @@ python -m venv .venv
 .venv\Scripts\activate  # Windows | source .venv/bin/activate (macOS/Linux)
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env with your VAPI credentials
+# Edit .env with your Google Gemini API key and VAPI credentials
 uvicorn app.main:app --reload
 ```
 
-#### 3. Frontend SetupOpenRouter API key and VAPI credentials
-python -m 
+#### 3. Frontend Setup
+
 ```bash
 cd ai-mock-interview-frontend
 npm install  # or bun install
@@ -151,7 +169,14 @@ cp .env.example .env.local
 npm run dev  # or bun dev
 ```
 
-#### 4. Access Application
+#### 4. (Optional) Setup ngrok for VAPI Webhooks
+```bash
+# In a separate terminal
+ngrok http 8000
+# Copy the https URL and update VAPI assistant settings
+```
+
+#### 5. Access Application
 
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8000
@@ -160,22 +185,20 @@ npm run dev  # or bun dev
 ### Environment Variables
 
 **Backend** (`.env`):
+```env
 # Database
 DATABASE_URL=sqlite:///./interview_platform.db
 
-# LLM Configuration (OpenRouter)
-LLM_API_KEY=sk-or-v1-your_openrouter_api_key
-LLM_BASE_URL=https://openrouter.ai/api/v1
-LLM_MODEL=google/gemini-2.0-flash-exp:free
+# Google Gemini Configuration (Direct SDK)
+GOOGLE_API_KEY=your_google_gemini_api_key
 
-# VAPI Configuration (Optional - for voice features)
+# VAPI Configuration (Required for voice features)
 VAPI_API_KEY=your_private_key
 VAPI_WEBHOOK_SECRET=your_webhook_secret
-BACKEND_URL=http://localhost:8000
+BACKEND_URL=http://localhost:8000  # Or your ngrok URL
 
 # Application
 DEBUG=True
-DATABASE_URL=sqlite:///./interview_platform.db
 ```
 
 **Frontend** (`.env.local`):
@@ -210,64 +233,119 @@ The backend API will be available at:
 cd ai-mock-interview-frontend
 
 # Run development server
-npm OpenRouter Setup
+npm run dev
+```
 
-1. Create an OpenRouter account at [openrouter.ai](https://openrouter.ai)
-2. Get your API key from [openrouter.ai/keys](https://openrouter.ai/keys)
-3. Add it to your backend `.env` file as `LLM_API_KEY`
-4. Default model is `google/gemini-2.0-flash-exp:free` (free tier)
-5. Alternative free models:
-   - `google/gemini-flash-1.5:free`
-   - `qwen/qwen-2.5-7b-instruct:free`
+### Database Setup
 
-### VAPI Setup (Optional)
-# SQLite** (default and recommended):
+**SQLite** (default and recommended):
 - No additional setup required
 - Database file: `interview_platform.db`
 - Automatically created on first run
-- Perfect for development and small-scale production
+- Tables: `interview_sessions`, `technical_submissions`
 
 ### LLM Configuration
 
-The platform uses **OpenRouter** to access various LLM models:
+The platform uses **Google Gemini 2.5 Flash** directly via the `google.generativeai` SDK:
 
-- **Default Model**: `google/gemini-2.0-flash-exp:free` (free tier)
-- **Customizable**: Change `LLM_MODEL` in `.env` to use different models
-- **Supported Free Models**: Gemini Flash 1.5, Qwen 2.5, and more
-- **Headers**: Automatically includes HTTP-Referer and X-Title for better rate limiting
+- **Model**: `gemini-2.5-flash` (fast, accurate, cost-effective)
+- **API Key**: Get from [Google AI Studio](https://aistudio.google.com/apikey)
+- **Usage**: Interview analysis, code evaluation, resume analysis
 
-**Development**: SQLite (default)
-- No additional setup required
-- Database file: `interview_platform.db`
+### VAPI Setup
 
-**Production**: PostgreSQL
-```env
-DATABASE_URL=postgresql://user:password@localhost:5432/interview_db
-```
-
-### ML Model Training
-
-To retrain the ML models with your own data:
-
-```bash
-cd ai-mock-interview-backend
-python scripts/generate_training_data.py  # Generate synthetic training data
-python scripts/train_model.py             # Train the models
-```
-
-Models will be saved to the `models/` directory.
+1. Create a VAPI account at [vapi.ai](https://vapi.ai)
+2. Create an assistant with your interview prompts
+3. Get your public key (starts with `pk_`) and assistant ID
+4. For webhooks, use ngrok to expose your local backend
+5. Configure webhook URL in VAPI dashboard: `https://your-ngrok-url.ngrok.io/api/v1/vapi/webhook`
 
 ## 📚 API Documentation
 
 ### Main Endpoints
 
-#### Startinterview/analyze
+#### Start Interview Session
+```http
+POST /api/v1/interview/start
+Content-Type: application/json
+
+{
+  "interview_type": "behavioral",
+  "difficulty": "intermediate",
+  "duration": 30,
+  "company": "Optional Company Name"
+}
+
+Response:
+{
+  "session_id": "uuid",
+  "questions": [...],
+  "interview_type": "behavioral"
+}
+```
+
+#### Get Interview Results (Round 1 - Behavioral)
+```http
+GET /api/v1/interview/results/{session_id}
+
+Response:
+{
+  "session_id": "uuid",
+  "interview_type": "behavioral",
+  "overall_score": 85,
+  "strengths": [...],
+  "improvements": [...],
+  "transcript": [...]
+}
+```
+
+#### Submit Technical Code (Round 2)
+```http
+POST /api/v1/technical/submit
 Content-Type: application/json
 
 {
   "session_id": "uuid",
-  "response_text": "User's answer",
-  "interview_type": "behavioral"
+  "question_title": "Two Sum",
+  "question_description": "Given an array...",
+  "code": "def two_sum(nums, target): ...",
+  "language": "python"
+}
+
+Response:
+{
+  "success": true,
+  "scores": {
+    "correctness": 90,
+    "efficiency": 85,
+    "code_quality": 88,
+    "best_practices": 80
+  },
+  "overall_score": 86,
+  "time_complexity": "O(n)",
+  "space_complexity": "O(n)",
+  "strengths": [...],
+  "improvements": [...],
+  "feedback": "Detailed code review..."
+}
+```
+
+#### Get Technical Results (Round 2)
+```http
+GET /api/v1/technical/results/{session_id}
+
+Response:
+{
+  "session_id": "uuid",
+  "submissions": [
+    {
+      "question_title": "Two Sum",
+      "code": "...",
+      "language": "python",
+      "overall_score": 86,
+      ...
+    }
+  ]
 }
 ```
 
@@ -278,27 +356,7 @@ Content-Type: multipart/form-data
 
 file: <resume.pdf/resume.docx/resume.txt>
 job_description: "Optional job description for matching"
-target_role: "Optional target role (e.g., Software Engineer)" "duration": 30,
-  "company": "Optional Company Name"
-}
-```
-
-#### Analyze Response
-```http
-POST /api/v1/interview/analyze-response
-Content-Type: application/json
-
-{
-  "session_id": "uuid",
-  "response_text": "User's answer",
-  "question_id": 1,
-  "question_number": 1
-}
-```
-
-#### Get Feedback
-```http
-GET /api/v1/interview/feedback/{session_id}
+target_role: "Optional target role (e.g., Software Engineer)"
 ```
 
 #### VAPI Webhook
@@ -376,39 +434,32 @@ docker run -p 8000:8000 --env-file .env ai-interview-backend
 
 #### Option 2: Traditional Hosting
 - Deploy to services like Heroku, Railway, or DigitalOcean
-- Ensure PostgreSQL database is configured
-- Set environment variables
-- Run migrations: `alembic upgrade head`
+- Set environment variables (GOOGLE_API_KEY, VAPI credentials)
+- SQLite works for small-scale production
+- For larger scale, configure PostgreSQL
 
 ### Frontend Deployment
 
 #### Vercel (Recommended)
 ```bash
 cd ai-mock-interview-frontend
-vercel deploy (SQLite default)
-- `LLM_API_KEY` - OpenRouter API key (**required**)
-- `LLM_BASE_URL` - OpenRouter base URL (https://openrouter.ai/api/v1)
-- `LLM_MODEL` - LLM model to use (default: google/gemini-2.0-flash-exp:free)
-- `VAPI_API_KEY` - VAPI private API key (optional)
-- `VAPI_WEBHOOK_SECRET` - VAPI webhook secret (optional)
-- `BACKEND_URL` - Backend URL for webhooks
-- `DEBUG` - Debug mode (True/False)
+vercel deploy
+```
+
 **Important**: Configure environment variables in your deployment platform.
 
 ## 📝 Environment Variables Summary
 
 ### Backend (.env)
-- `DATABASE_URL` - Database connection string
-- `VAPI_API_KEY` - VAPI private API key
+- `DATABASE_URL` - Database connection string (SQLite default)
+- `GOOGLE_API_KEY` - Google Gemini API key (**required**)
+- `VAPI_API_KEY` - VAPI private API key (required for voice)
 - `VAPI_WEBHOOK_SECRET` - VAPI webhook secret
-- `SECRET_KEY` - JWT secret key for authentication
-- `BACKEND_URL` - Backend URL for webhooks
-- `OPENAI_API_KEY` - OpenAI API key (optional)
+- `BACKEND_URL` - Backend URL for webhooks (use ngrok URL in dev)
 - `DEBUG` - Debug mode (True/False)
-- `ALLOWED_ORIGINS` - CORS allowed origins
 
 ### Frontend (.env.local)
-- `NEXT_PUBLIC_API_URL` - Backend API URL
+- `NEXT_PUBLIC_API_URL` - Backend API URL (http://localhost:8000)
 - `NEXT_PUBLIC_VAPI_PUBLIC_KEY` - VAPI public key (starts with pk_)
 - `NEXT_PUBLIC_VAPI_ASSISTANT_ID` - VAPI assistant ID
 
@@ -425,14 +476,15 @@ vercel deploy (SQLite default)
 ## 📄 License
 
 This project is licensed under the MIT License.
-OpenRouter** for LLM API access
-- **Google** for Gemini models
+
+## 🙏 Acknowledgments
+
+- **Google** for Gemini AI models
 - **VAPI** for voice integration
 - **FastAPI** for the excellent Python web framework
 - **Next.js** for the React framework
-- **shadcn/ui** for beautiful UI componentn web framework
-- **Next.js** for the React framework
 - **shadcn/ui** for beautiful UI components
+- **Monaco Editor** for the VS Code-like code editing experience
 - **scikit-learn** for ML capabilities
 
 ## 📧 Support
