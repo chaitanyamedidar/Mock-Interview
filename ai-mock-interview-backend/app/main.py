@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Request, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Depends, status, Request, UploadFile, File, Form, BackgroundTasks
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -10,8 +11,9 @@ from sqlalchemy.orm import Session
 
 # Import custom modules
 from .database import get_db, SessionLocal, init_database
-from .models import InterviewSession, SessionResponse, InterviewQuestion
+from .models import InterviewSession, SessionResponse, InterviewQuestion, InterviewReport
 from .vapi_service import VAPIManager
+from .vapi_interview_service import VAPIInterviewAnalyzer
 from .resume_service import ATSResumeAnalyzer
 from .file_parser import FileParser
 from .question_service import get_question_service
@@ -40,6 +42,7 @@ app.add_middleware(
 
 # Initialize services
 vapi_manager = VAPIManager()
+interview_analyzer = VAPIInterviewAnalyzer()
 resume_analyzer = ATSResumeAnalyzer()
 
 # Pydantic models for request/response validation
@@ -317,9 +320,24 @@ async def get_session_details(session_id: str, db: Session = Depends(get_db)):
         logger.error(f"Error getting session details: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Background analysis task wrapper
+async def run_analysis_background(webhook_data: Dict[str, Any]):
+    """Run interview analysis in background with fresh DB session"""
+    db = SessionLocal()
+    try:
+        logger.info(f"Starting background analysis for call {webhook_data.get('call', {}).get('id')}")
+        await interview_analyzer.process_interview_transcript(webhook_data, db)
+        logger.info("Background analysis completed successfully")
+    except Exception as e:
+        logger.error(f"Background analysis failed: {e}")
+    finally:
+        db.close()
+
 # VAPI Webhook Endpoints
 @app.post("/api/vapi/webhook")
-async def handle_vapi_webhook(request: Request):
+
+@app.post("/api/vapi/webhook")
+async def handle_vapi_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Handle VAPI webhook events
     """
@@ -338,11 +356,138 @@ async def handle_vapi_webhook(request: Request):
         # Handle the webhook
         result = vapi_manager.handle_webhook(webhook_data)
         
+        # Check if analysis should be triggered
+        if result.get('status') == 'call_ended':
+            # Run analysis in background
+            background_tasks.add_task(run_analysis_background, webhook_data)
+            logger.info("Queued background analysis for call")
+        
         return result
         
     except Exception as e:
         logger.error(f"Error handling VAPI webhook: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/vapi/interview-complete")
+async def handle_interview_complete(request: Request, db: Session = Depends(get_db)):
+    """
+    Handle VAPI interview completion webhook.
+    Receives transcript, analyzes with hybrid rule-based + LLM approach,
+    returns structured feedback matching frontend schema.
+    """
+    try:
+        # Get raw payload for signature validation
+        payload = await request.body()
+        signature = request.headers.get('x-vapi-signature', '')
+        
+        # Validate webhook signature
+        if not vapi_manager.validate_webhook_signature(payload.decode(), signature):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+        
+        # Parse JSON payload
+        webhook_data = await request.json()
+        
+        # Validate payload structure
+        call_data = webhook_data.get('call', {})
+        if not call_data:
+            raise HTTPException(status_code=400, detail="Missing 'call' data in payload")
+        
+        transcript_data = call_data.get('transcript', {})
+        messages = transcript_data.get('messages', [])
+        
+        if not messages:
+            raise HTTPException(status_code=400, detail="No transcript data found")
+        
+        metadata = call_data.get('metadata', {})
+        session_id = metadata.get('session_id')
+        
+        if not session_id:
+            raise HTTPException(status_code=400, detail="Missing session_id in metadata")
+        
+        # Process interview transcript
+        logger.info(f"Processing interview completion for session {session_id}")
+        
+        try:
+            analysis_result = await interview_analyzer.process_interview_transcript(
+                vapi_payload=webhook_data,
+                db=db
+            )
+            
+            logger.info(f"Successfully analyzed interview for session {session_id}")
+            return analysis_result
+        
+        except ValueError as e:
+            # Validation errors (e.g., no questions found)
+            logger.error(f"Validation error processing interview: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        except Exception as e:
+            # Unexpected errors during processing
+            logger.error(f"Error processing interview transcript: {e}")
+            raise HTTPException(
+                status_code=500, 
+                detail="Failed to process interview. Please try again."
+            )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error handling interview complete webhook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/interview/results/{session_id}")
+async def get_interview_results(session_id: str, db: Session = Depends(get_db)):
+    """
+    Poll for interview results by session_id.
+    Returns 202 if still processing, 200 with data if ready, 404 if not found.
+    """
+    try:
+        # Query for the interview report
+        report = db.query(InterviewReport).filter(
+            InterviewReport.session_id == session_id
+        ).first()
+        
+        if not report:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Interview session '{session_id}' not found"
+            )
+        
+        # Check if analysis is complete
+        if not report.category_scores or not report.recommendations:
+            # Still processing
+            return JSONResponse(
+                status_code=202,
+                content={
+                    "message": "Analysis in progress",
+                    "session_id": session_id,
+                    "status": "processing"
+                }
+            )
+        
+        # Results ready - return complete analysis
+        return {
+            "report_summary": {
+                "overall_score": float(report.overall_score),
+                "performance_label": report.performance_label,
+                "total_questions_analyzed": report.total_questions_analyzed,
+                "categories": report.category_scores
+            },
+            "ai_recommendations": report.recommendations,
+            "metadata": {
+                "session_id": report.session_id,
+                "analysis_timestamp": report.created_at.isoformat() if report.created_at else None,
+                "call_duration": report.call_duration
+            }
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching interview results: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch results")
+
 
 # Utility Functions
 def get_questions_for_interview(
@@ -538,7 +683,7 @@ async def analyze_resume(
             )
         
         # Analyze the resume using the LLM service
-        analysis = resume_analyzer.analyze_resume(
+        analysis = await resume_analyzer.analyze_resume(
             resume_text=resume_text,
             job_description=job_description or '',
             target_role=target_role or ''

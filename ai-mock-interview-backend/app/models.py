@@ -71,3 +71,33 @@ class SessionResponse(Base):
     technical_accuracy_score = Column(DECIMAL(4, 2), nullable=True)
     overall_response_score = Column(DECIMAL(4, 2), nullable=True)
     response_rating = Column(String(20), nullable=True)
+
+class InterviewReport(Base):
+    """Interview analysis report from VAPI webhook"""
+    __tablename__ = 'interview_reports'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(36), nullable=False, index=True)
+    user_id = Column(Integer, nullable=True, index=True)
+    call_id = Column(String(100), nullable=True)
+    
+    # Overall scores
+    overall_score = Column(DECIMAL(5, 2), nullable=False)
+    performance_label = Column(String(50), nullable=False)
+    total_questions_analyzed = Column(Integer, nullable=False)
+    
+    # Category scores and trends (stored as JSON)
+    category_scores = Column(JSON, nullable=False)
+    
+    # AI recommendations (stored as JSON array)
+    recommendations = Column(JSON, nullable=False)
+    
+    # Complete transcript for audit and re-analysis (stored as JSON)
+    transcript = Column(JSON, nullable=True)
+    
+    # Metadata
+    processing_time_ms = Column(Integer, nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    
+    # Call metadata
+    call_duration_seconds = Column(Integer, nullable=True)

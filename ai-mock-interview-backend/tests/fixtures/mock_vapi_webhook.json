@@ -1,0 +1,66 @@
+{
+    "call": {
+        "id": "call_abc123xyz",
+        "status": "ended",
+        "transcript": {
+            "messages": [
+                {
+                    "role": "assistant",
+                    "message": "Tell me about a time when you solved a difficult technical problem.",
+                    "timestamp": "2026-01-29T10:00:00Z"
+                },
+                {
+                    "role": "user",
+                    "message": "In my previous role as a software engineer, I encountered a critical performance issue in our API that was causing timeouts. The system was handling about 1000 requests per second, and response times were exceeding 5 seconds. I analyzed the database queries using profiling tools and discovered that we had N+1 query problems in our ORM. I implemented eager loading and added Redis caching for frequently accessed data. This reduced our average response time to under 200 milliseconds and improved throughput by 80 percent.",
+                    "timestamp": "2026-01-29T10:00:45Z"
+                },
+                {
+                    "role": "assistant",
+                    "message": "Excellent. Can you explain the difference between synchronous and asynchronous programming?",
+                    "timestamp": "2026-01-29T10:01:00Z"
+                },
+                {
+                    "role": "user",
+                    "message": "Um, so synchronous programming is like when code executes line by line, you know, and each operation waits for the previous one to complete. Asynchronous programming allows multiple operations to run concurrently without blocking. For example, in Node.js, you can use async/await or promises to handle asynchronous operations like API calls or database queries. This is really important for I/O-bound operations because it prevents the application from freezing while waiting for external resources.",
+                    "timestamp": "2026-01-29T10:01:50Z"
+                },
+                {
+                    "role": "assistant",
+                    "message": "Good. How would you design a URL shortening service like bit.ly?",
+                    "timestamp": "2026-01-29T10:02:10Z"
+                },
+                {
+                    "role": "user",
+                    "message": "For a URL shortening service, I would start with the core requirements: generating short unique URLs, redirecting to original URLs, and handling high traffic. The architecture would include a load balancer, application servers, and a database. For generating short URLs, I'd use base62 encoding of a unique ID. The database schema would have a table mapping short codes to original URLs with timestamps. For scalability, I'd implement caching with Redis to store frequently accessed URLs, use database sharding for horizontal scaling, and add a CDN for global distribution. We'd also need rate limiting to prevent abuse and analytics to track click metrics.",
+                    "timestamp": "2026-01-29T10:03:30Z"
+                },
+                {
+                    "role": "assistant",
+                    "message": "What is your experience with testing and test-driven development?",
+                    "timestamp": "2026-01-29T10:04:00Z"
+                },
+                {
+                    "role": "user",
+                    "message": "I have extensive experience with testing. I write unit tests using Jest and pytest, integration tests for APIs, and end-to-end tests with Selenium. I follow the testing pyramid approach with more unit tests than integration tests. I've also practiced test-driven development where you write tests before implementation. This helps ensure code quality and makes refactoring safer. In my last project, we achieved 85 percent code coverage and caught several bugs before they reached production.",
+                    "timestamp": "2026-01-29T10:04:55Z"
+                },
+                {
+                    "role": "assistant",
+                    "message": "Finally, tell me about a time you had to work with a difficult team member.",
+                    "timestamp": "2026-01-29T10:05:15Z"
+                },
+                {
+                    "role": "user",
+                    "message": "I worked with a senior developer who was resistant to code reviews and often pushed changes without proper testing. Instead of confronting them directly, I scheduled a one-on-one meeting to understand their perspective. They felt the review process was slowing down delivery. I proposed a compromise: we'd streamline the review process by using automated linting and testing, and focus reviews on critical logic only. This reduced review time by 40 percent while maintaining code quality. The developer became more collaborative, and our team velocity actually improved.",
+                    "timestamp": "2026-01-29T10:06:20Z"
+                }
+            ]
+        },
+        "duration": 380,
+        "metadata": {
+            "session_id": "test-session-uuid-12345",
+            "user_id": 1,
+            "interview_type": "technical_software"
+        }
+    }
+}

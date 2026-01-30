@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  apiService, 
-  InterviewQuestion, 
-  InterviewSession, 
+import {
+  apiService,
+  InterviewQuestion,
+  InterviewSession,
   ResponseAnalysis,
   InterviewType,
-  DifficultyLevel 
+  DifficultyLevel
 } from '@/lib/api';
 
 export interface InterviewState {
@@ -56,7 +56,7 @@ export const useInterview = () => {
 
     try {
       const result = await apiService.startInterview(params);
-      
+
       setState(prev => ({
         ...prev,
         session: {
@@ -76,8 +76,23 @@ export const useInterview = () => {
       }));
 
       return result;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to start interview';
+    } catch (error: any) {
+      console.error('❌ Failed to start interview:', error);
+      let errorMessage = 'Failed to start interview';
+
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        // Defensive: Check if it's a Response object or similar
+        try {
+          errorMessage = JSON.stringify(error);
+        } catch (e) {
+          errorMessage = 'Unknown error object';
+        }
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+
       setError(errorMessage);
       setLoading(false);
       throw error;
@@ -101,7 +116,7 @@ export const useInterview = () => {
 
     try {
       const feedback = await apiService.endInterview(state.session.session_id);
-      
+
       setState(prev => ({
         ...prev,
         isCompleted: true,
@@ -109,8 +124,22 @@ export const useInterview = () => {
       }));
 
       return feedback;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to end interview';
+    } catch (error: any) {
+      console.error('❌ Failed to end interview:', error);
+      let errorMessage = 'Failed to end interview';
+
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        try {
+          errorMessage = JSON.stringify(error);
+        } catch (e) {
+          errorMessage = 'Unknown error object';
+        }
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+
       setError(errorMessage);
       setLoading(false);
       throw error;
