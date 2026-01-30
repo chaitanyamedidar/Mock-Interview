@@ -58,8 +58,14 @@ class InterviewStartResponse(BaseModel):
     vapi_config: Dict[str, Any]
     assistant_id: Optional[str] = None
 
+class TranscriptMessage(BaseModel):
+    role: str
+    message: str
+    timestamp: Optional[str] = None
+
 class EndInterviewRequest(BaseModel):
     session_id: str
+    transcript: Optional[List[TranscriptMessage]] = None
 
 class FeedbackResponse(BaseModel):
     session_id: str
@@ -174,7 +180,8 @@ async def start_interview(request: InterviewStartRequest, db: Session = Depends(
 @app.post("/api/interview/end", response_model=FeedbackResponse)
 async def end_interview(request: EndInterviewRequest, db: Session = Depends(get_db)):
     """
-    End interview session and generate comprehensive feedback
+    End interview session and generate comprehensive feedback.
+    Supports both VAPI webhook-based reports and direct transcript submission.
     """
     try:
         # Get session
@@ -184,14 +191,94 @@ async def end_interview(request: EndInterviewRequest, db: Session = Depends(get_
         
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+
+        # 1. If transcript is provided directly (Frontend fallback), process it immediately
+        if request.transcript:
+            logger.info(f"Processing provided transcript for session {request.session_id}")
+            
+            # Construct mock VAPI payload
+            mock_payload = {
+                "call": {
+                    "id": "manual_submission_" + request.session_id,
+                    "duration": 0, # We might not have duration
+                    "metadata": {
+                        "session_id": request.session_id,
+                        "interview_type": session.interview_type,
+                        "user_id": session.user_id
+                    },
+                    "transcript": {
+                        "messages": [
+                            {
+                                "role": msg.role,
+                                "message": msg.message,
+                                "timestamp": msg.timestamp or datetime.utcnow().isoformat()
+                            }
+                            for msg in request.transcript
+                        ]
+                    }
+                }
+            }
+            
+            # Process using VAPI analyzer
+            try:
+                analysis_result = await interview_analyzer.process_interview_transcript(mock_payload, db)
+                logger.info(f"Analysis completed for session {request.session_id}")
+                
+                # The report is already saved by process_interview_transcript
+                # Now fetch it fresh and return
+                report = db.query(InterviewReport).filter(
+                    InterviewReport.session_id == request.session_id
+                ).first()
+                
+                if report:
+                    # Update session status
+                    session.status = 'completed'
+                    session.completed_at = datetime.utcnow()
+                    session.overall_score = report.overall_score
+                    session.overall_rating = report.performance_label
+                    db.commit()
+                    
+                    return FeedbackResponse(
+                        session_id=request.session_id,
+                        overall_score=float(report.overall_score),
+                        overall_rating=report.performance_label,
+                        strengths=[r['description'] for r in report.recommendations if 'Strength' in r.get('title', '')] or ["Good interview performance"],
+                        improvements=[r['description'] for r in report.recommendations if 'Strength' not in r.get('title', '')],
+                        detailed_analysis=report.category_scores,
+                        question_breakdown=report.transcript if report.transcript else []
+                    )
+                
+            except Exception as e:
+                logger.error(f"Error processing manual transcript: {e}", exc_info=True)
+                # Fallthrough to try fetching existing report/responses
         
+        # 2. Check for existing InterviewReport (from VAPI webhook or just created above)
+        report = db.query(InterviewReport).filter(
+            InterviewReport.session_id == request.session_id
+        ).first()
+        
+        if report:
+             # Map InterviewReport to FeedbackResponse
+             # Note: InterviewReport stores `category_scores` as JSON, `recommendations` as JSON
+             
+             return FeedbackResponse(
+                session_id=request.session_id,
+                overall_score=float(report.overall_score),
+                overall_rating=report.performance_label,
+                strengths=[r['description'] for r in report.recommendations if 'Strength' in r.get('title', '')] or ["Check detailed report"], # Simple extraction
+                improvements=[r['description'] for r in report.recommendations if 'Strength' not in r.get('title', '')],
+                detailed_analysis=report.category_scores, # This was detailed_metrics
+                question_breakdown=report.transcript if report.transcript else [] # Enriched transcript
+             )
+
+        # 3. Fallback: Old SessionResponse logic (Non-VAPI)
         # Get all responses for this session
         responses = db.query(SessionResponse).filter(
             SessionResponse.session_id == request.session_id
         ).order_by(SessionResponse.question_number).all()
         
         if not responses:
-            raise HTTPException(status_code=400, detail="No responses found for this session")
+            raise HTTPException(status_code=400, detail="No responses or report found for this session")
         
         # Calculate overall metrics
         overall_analysis = calculate_overall_feedback(responses, db)
@@ -387,21 +474,37 @@ async def handle_interview_complete(request: Request, db: Session = Depends(get_
         # Parse JSON payload
         webhook_data = await request.json()
         
+        # Handle implicit 'message' wrapper from VAPI
+        if 'message' in webhook_data:
+            webhook_data = webhook_data['message']
+
+        # Log the message type for debugging
+        message_type = webhook_data.get('type')
+        logger.info(f"Received VAPI webhook event type: {message_type}")
+
+        # If this is not an end-of-call-report or doesn't have a transcript, we might want to ignore it 
+        # to prevent 400 errors on call setup/status events (call-start, etc.)
+        if message_type in ['call-start', 'status-update', 'speech-update', 'function-call']:
+            return {"status": "ignored", "reason": f"Event {message_type} handled elsewhere or ignored"}
+
         # Validate payload structure
         call_data = webhook_data.get('call', {})
         if not call_data:
+            logger.error("Missing 'call' data in payload")
             raise HTTPException(status_code=400, detail="Missing 'call' data in payload")
         
         transcript_data = call_data.get('transcript', {})
         messages = transcript_data.get('messages', [])
         
         if not messages:
+            logger.error("No transcript data found in payload")
             raise HTTPException(status_code=400, detail="No transcript data found")
         
         metadata = call_data.get('metadata', {})
         session_id = metadata.get('session_id')
         
         if not session_id:
+            logger.error("Missing session_id in metadata")
             raise HTTPException(status_code=400, detail="Missing session_id in metadata")
         
         # Process interview transcript
@@ -475,10 +578,11 @@ async def get_interview_results(session_id: str, db: Session = Depends(get_db)):
                 "categories": report.category_scores
             },
             "ai_recommendations": report.recommendations,
+            "questions_breakdown": report.transcript, # This now contains the analyzed Q&A
             "metadata": {
                 "session_id": report.session_id,
                 "analysis_timestamp": report.created_at.isoformat() if report.created_at else None,
-                "call_duration": report.call_duration
+                "call_duration": report.call_duration_seconds
             }
         }
     

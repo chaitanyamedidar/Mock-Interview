@@ -35,6 +35,12 @@ export function useVAPI(config: Partial<VAPIConfig> = {}): VAPICall {
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const vapiRef = useRef<Vapi | null>(null);
+  const configRef = useRef(config);
+
+  // Update config ref on every render
+  useEffect(() => {
+    configRef.current = config;
+  });
 
   // Use environment variables or provided values
   const apiKey = config.apiKey || process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY;
@@ -66,37 +72,37 @@ export function useVAPI(config: Partial<VAPIConfig> = {}): VAPICall {
         console.log('📞 Call started');
         setIsCallActive(true);
         setError(null);
-        config.onCallStart?.();
+        configRef.current.onCallStart?.();
       });
 
       vapiRef.current.on('call-end', () => {
         console.log('📞 Call ended');
         setIsCallActive(false);
         setIsSpeaking(false);
-        config.onCallEnd?.();
+        configRef.current.onCallEnd?.();
       });
 
       vapiRef.current.on('speech-start', () => {
         console.log('🗣️ Speech started');
         setIsSpeaking(true);
-        config.onSpeechStart?.();
+        configRef.current.onSpeechStart?.();
       });
 
       vapiRef.current.on('speech-end', () => {
         console.log('🤐 Speech ended');
         setIsSpeaking(false);
-        config.onSpeechEnd?.();
+        configRef.current.onSpeechEnd?.();
       });
 
       vapiRef.current.on('message', (message: any) => {
         console.log('📨 Message:', message);
 
         // Pass all messages to handler (including role information)
-        config.onMessage?.(message);
+        configRef.current.onMessage?.(message);
 
         // Also handle legacy transcript callback
         if (message.type === 'transcript' && message.transcript) {
-          config.onTranscript?.(message.transcript);
+          configRef.current.onTranscript?.(message.transcript);
         }
       });
 
@@ -119,7 +125,7 @@ export function useVAPI(config: Partial<VAPIConfig> = {}): VAPICall {
         setError(errorMsg);
         setIsCallActive(false);
         setIsSpeaking(false);
-        config.onError?.(err);
+        configRef.current.onError?.(err);
       });
 
       console.log('✅ VAPI fully initialized and ready!');

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { v4 as uuidv4 } from 'uuid';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +29,7 @@ interface TranscriptMessage {
   speaker: 'user' | 'interviewer';
   text: string;
   timestamp: Date;
+  isFinal?: boolean;
 }
 
 export default function InterviewPage() {
@@ -37,11 +37,18 @@ export default function InterviewPage() {
   const interview = useInterview();
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [currentResponse, setCurrentResponse] = useState("");
+  // Removed separate state for currentResponse to avoid sync issues
+  // const [currentResponse, setCurrentResponse] = useState("");
   const [sessionId, setSessionId] = useState<string>("");
   const [isAnalyzingResults, setIsAnalyzingResults] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+  // Derive current response from messages
+  const currentResponse = messages
+    .filter(msg => msg.speaker === 'user')
+    .map(msg => msg.text)
+    .join(' ');
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -55,37 +62,40 @@ export default function InterviewPage() {
     onMessage: (message) => {
       if (message.type === 'transcript' && message.transcript) {
         const isUser = message.role === 'user';
+        const transcriptType = message.transcriptType || 'final'; // Default to final if not specified
+        const isFinal = transcriptType === 'final';
 
         setMessages(prev => {
-          // If last message is from the same speaker, append to it instead of creating new message
-          if (prev.length > 0 && prev[prev.length - 1].speaker === (isUser ? 'user' : 'interviewer')) {
+          const lastMsg = prev[prev.length - 1];
+          const isSameSpeaker = lastMsg?.speaker === (isUser ? 'user' : 'interviewer');
+          
+          // If we have a previous message from the same speaker that IS NOT final,
+          // we should update it regardless of whether the new piece is partial or final.
+          if (isSameSpeaker && !lastMsg.isFinal) {
             const updated = [...prev];
             updated[updated.length - 1] = {
-              ...updated[updated.length - 1],
-              text: updated[updated.length - 1].text + ' ' + message.transcript
+              ...lastMsg,
+              text: message.transcript, // Replace with new accumulated transcript
+              isFinal: isFinal
             };
             return updated;
           }
 
-          // Otherwise create new message
+          // If the last message was final, or different speaker, append new message
           return [
             ...prev,
             {
               speaker: isUser ? 'user' : 'interviewer',
               text: message.transcript,
-              timestamp: new Date()
+              timestamp: new Date(),
+              isFinal: isFinal
             }
           ];
         });
-
-        if (isUser) {
-          setCurrentResponse(prev => prev + ' ' + message.transcript);
-        }
       }
     },
     onCallStart: () => {
       setMessages([]);
-      setCurrentResponse('');
     },
     onCallEnd: async () => {
       // Call ended - Proceed to Round 2 (Technical)
@@ -93,7 +103,11 @@ export default function InterviewPage() {
 
       // Delay slightly to let the user see the visual cue of call ending
       setTimeout(() => {
-        router.push("/technical-interview");
+        if (sessionId) {
+          router.push(`/technical-interview?session_id=${sessionId}`);
+        } else {
+          router.push("/technical-interview");
+        }
       }, 1500);
     },
     onError: (error) => {
@@ -120,20 +134,20 @@ export default function InterviewPage() {
 
   const handleStartInterview = async () => {
     try {
-      // Generate unique session ID
-      const newSessionId = uuidv4();
-      setSessionId(newSessionId);
-      console.log('🆔 Generated session ID:', newSessionId);
-
-      await interview.startInterview({
+      const result = await interview.startInterview({
         interview_type: InterviewType.BEHAVIORAL,
         difficulty: DifficultyLevel.INTERMEDIATE,
         duration: 30,
         company: "Tech Company"
       });
 
+      // Use session_id from backend response
+      const backendSessionId = result.session_id;
+      setSessionId(backendSessionId);
+      console.log('🆔 Using backend session ID:', backendSessionId);
+
       // Start VAPI call with metadata
-      await vapi.start({ session_id: newSessionId });
+      await vapi.start({ session_id: backendSessionId });
     } catch (error) {
       console.error("Failed to start interview:", error);
     }
@@ -148,22 +162,20 @@ export default function InterviewPage() {
         );
 
         if (response.status === 200) {
-          return await response.json();
+          const data = await response.json();
+          return data;
+        } else if (response.status === 404) {
+             console.log(`Report not found yet (attempt ${attempt + 1}/${maxAttempts})`);
+        } else {
+             console.log(`Backend returned status ${response.status}`);
         }
-
-        if (response.status === 404) {
-          throw new Error("Interview session not found");
-        }
-
-        // 202 - still processing, wait and retry
-        console.log(`⏳ Attempt ${attempt + 1}/${maxAttempts}: Still processing...`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
       } catch (error) {
-        if (attempt === maxAttempts - 1) throw error;
+         console.error('Error polling for results:', error);
       }
+      // Wait 2 seconds before retry
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
-
-    throw new Error("Analysis timeout - please try again");
+    throw new Error('Timeout waiting for interview results');
   };
 
   const handleToggleRecording = () => {
@@ -177,7 +189,6 @@ export default function InterviewPage() {
   const handleNextQuestion = async () => {
     interview.nextQuestion();
     setMessages([]);
-    setCurrentResponse("");
   };
 
   const handleEndInterview = async () => {
@@ -187,13 +198,22 @@ export default function InterviewPage() {
         await vapi.stop();
       }
 
-      await interview.endInterview();
+      // Format transcript for backend
+      const formattedTranscript = messages.map(msg => ({
+        role: msg.speaker === 'user' ? 'user' : 'assistant',
+        message: msg.text,
+        timestamp: msg.timestamp.toISOString()
+      }));
+
+      console.log('📝 Sending transcript for analysis:', formattedTranscript.length, 'messages');
+
+      await interview.endInterview(formattedTranscript);
       // Navigate to Round 2 (Technical Interview)
-      router.push("/technical-interview");
+      router.push(`/technical-interview?session_id=${sessionId}`);
     } catch (error) {
       console.error("Failed to end interview:", error);
       // Navigate to technical round even if there's an error
-      router.push("/technical-interview");
+      router.push(`/technical-interview?session_id=${sessionId}`);
     }
   };
 
@@ -205,7 +225,7 @@ export default function InterviewPage() {
 
   const handleSkipToTechnical = () => {
     if (window.confirm("Skip Round 1 and go directly to the Technical Interview? You will not receive behavioral feedback.")) {
-      router.push("/technical-interview");
+      router.push(`/technical-interview${sessionId ? `?session_id=${sessionId}` : ''}`);
     }
   };
 
@@ -479,12 +499,24 @@ export default function InterviewPage() {
                 </Alert>
               )}
 
-              {/* Your Response - Commented out as requested */}
-              {/* <FeedbackDisplay 
-              feedback={currentFeedback}
-              transcript={currentResponse}
-              isAnalyzing={isAnalyzing}
-            /> */}
+              {/* Your Response */}
+              <Card className="bg-card/50 border-border/40">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <MessageSquare className="h-5 w-5 text-primary" />
+                    <h3 className="font-semibold">Your Response</h3>
+                  </div>
+                  <div className="min-h-[100px] p-4 rounded-lg bg-muted/30 max-h-60 overflow-y-auto">
+                    {currentResponse ? (
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{currentResponse}</p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground italic">
+                        Start speaking to see your response here...
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* Tips Card */}
               <Card className="bg-gradient-to-br from-primary/10 to-purple-600/10 border-primary/20">

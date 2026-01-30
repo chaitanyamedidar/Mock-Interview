@@ -129,10 +129,13 @@ class APIService {
   }
 
   // End interview and get feedback
-  async endInterview(sessionId: string): Promise<FeedbackResponse> {
+  async endInterview(sessionId: string, transcript?: Array<{role: string, message: string, timestamp?: string}>): Promise<FeedbackResponse> {
     return this.fetchAPI('/api/interview/end', {
       method: 'POST',
-      body: JSON.stringify({ session_id: sessionId }),
+      body: JSON.stringify({ 
+        session_id: sessionId,
+        transcript: transcript
+      }),
     });
   }
 

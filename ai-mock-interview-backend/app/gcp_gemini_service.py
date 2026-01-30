@@ -387,11 +387,18 @@ Return ONLY valid JSON (no markdown, no code blocks) with this exact schema:
 {{
   "technical_skills_assessment": <number 0-100>,
   "problem_solving_assessment": <number 0-100>,
-  "answer_quality_scores": [<number>, <number>, ...],
   "confidence_indicators": {{
     "tone_confidence": <number 0-100>,
     "answer_clarity": <number 0-100>
   }},
+  "per_question_analysis": [
+    {{
+      "question_id": <int index>,
+      "score": <number 0-100>,
+      "key_strengths": ["<string>", "<string>"],
+      "improvements": ["<string>", "<string>"]
+    }}
+  ],
   "key_strengths": ["<string>", "<string>", "<string>"],
   "key_weaknesses": ["<string>", "<string>", "<string>"],
   "specific_improvements": ["<string>", "<string>", "<string>"]
@@ -440,13 +447,21 @@ Provide actionable, concrete recommendations."""
     def _validate_transcript_response(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Validate and normalize interview transcript response."""
         # Ensure all required fields exist with defaults
+        # Validate per_question_analysis
+        per_question = data.get("per_question_analysis", [])
+        validated_questions = []
+        for q in per_question:
+            validated_questions.append({
+                "question_id": q.get("question_id", 0),
+                "score": self._clamp_score(q.get("score", 50)),
+                "key_strengths": q.get("key_strengths", [])[:2],
+                "improvements": q.get("improvements", [])[:2]
+            })
+
         validated = {
             "technical_skills_assessment": self._clamp_score(data.get("technical_skills_assessment", 50)),
             "problem_solving_assessment": self._clamp_score(data.get("problem_solving_assessment", 50)),
-            "answer_quality_scores": [
-                self._clamp_score(score) 
-                for score in data.get("answer_quality_scores", [])
-            ],
+            "per_question_analysis": validated_questions,
             "confidence_indicators": {
                 "tone_confidence": self._clamp_score(
                     data.get("confidence_indicators", {}).get("tone_confidence", 50)

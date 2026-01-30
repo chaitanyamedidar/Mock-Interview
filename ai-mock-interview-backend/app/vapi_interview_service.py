@@ -172,6 +172,26 @@ class VAPIInterviewAnalyzer:
             }
         }
         
+        # Combine Q&A with LLM feedback
+        analyzed_transcript = []
+        per_question_analysis = llm_analysis.get('per_question_analysis', [])
+        
+        for i, qa in enumerate(qa_pairs):
+            # Find matching analysis or use defaults
+            analysis = next((item for item in per_question_analysis if item.get('question_index', i+1) == i+1), {})
+            if not analysis and i < len(per_question_analysis):
+                # Fallback to positional match if index missing
+                analysis = per_question_analysis[i]
+                
+            analyzed_transcript.append({
+                "question": qa['question'],
+                "answer": qa['answer'],
+                "score": analysis.get('score', 70),
+                "strengths": analysis.get('key_strengths', []),
+                "improvements": analysis.get('improvements', []),
+                "timestamp": messages[0].get('timestamp') if messages else None # Approximation
+            })
+
         # Save to database
         self.save_report(
             db=db,
@@ -184,7 +204,7 @@ class VAPIInterviewAnalyzer:
             total_questions=total_questions,
             category_scores=response['report_summary']['categories'],
             recommendations=recommendations,
-            transcript=messages,
+            transcript=analyzed_transcript, # Saving enrichment transcript instead of raw messages
             processing_time_ms=processing_time_ms
         )
         

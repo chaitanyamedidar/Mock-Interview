@@ -301,24 +301,33 @@ export default function TechnicalInterviewPage() {
   // Submit code for evaluation
   const submitCode = async () => {
     try {
+      const sessionId = searchParams?.get('session_id') || "mock-session-id";
+
       const response = await fetch("/api/technical/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          session_id: sessionId,
           code,
           language,
           snapshots,
           suspiciousActivity,
-          question: question.title,
+          question: question ? question.title : "Unknown",
         }),
       });
 
       if (response.ok) {
-        router.push("/feedback");
+        // Ensure we pass the session_id to the feedback page
+        router.push(`/feedback?session_id=${sessionId}`);
+      } else {
+        console.error("Failed to submit code, response not ok");
+        // Still redirect to feedback to show whatever data we have
+        router.push(`/feedback?session_id=${sessionId}`);
       }
     } catch (error) {
       console.error("Failed to submit code:", error);
-      router.push("/feedback");
+      const sessionId = searchParams?.get('session_id') || "mock-session-id";
+      router.push(`/feedback?session_id=${sessionId}`);
     }
   };
 

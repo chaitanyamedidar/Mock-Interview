@@ -106,16 +106,26 @@ export const useInterview = () => {
     }));
   }, []);
 
-  const endInterview = useCallback(async () => {
+  const endInterview = useCallback(async (transcript?: Array<{role: string, message: string, timestamp?: string}>) => {
     if (!state.session) {
-      throw new Error('No active session');
+//       throw new Error('No active session'); // commenting out check to prevent crashing if state lost but sessionId exists in url/parent
+// But wait, state.session is required to get session_id.
+// If state.session is null, we can't end it.
+      console.warn("No active session in state, cannot end interview via hook cleanly.");
+      // return; 
+    }
+    
+    // Safety check for session_id
+    const sessionId = state.session?.session_id;    
+    if (!sessionId) {
+        throw new Error('No active session ID');
     }
 
     setLoading(true);
     setError(null);
 
     try {
-      const feedback = await apiService.endInterview(state.session.session_id);
+      const feedback = await apiService.endInterview(sessionId, transcript);
 
       setState(prev => ({
         ...prev,
